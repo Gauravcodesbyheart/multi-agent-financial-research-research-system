@@ -1,75 +1,46 @@
 # FinResearch AI
 
-### Multi-Agent AI Analysis System for Financial Research & Business Insights
+### Multi-Agent AI Financial Research & Business Insights Platform
 
-FinResearch AI is a full-stack financial research workspace designed for finance students, MBA candidates, researchers, and early-career analysts.
+FinResearch AI is a full-stack **multi-agent AI system for financial research and business analysis**.
 
-The system transforms financial documents such as annual reports, 10-K filings, earnings transcripts, investor presentations, PDF files, DOCX files, and TXT files into searchable evidence, structured financial metrics, risk indicators, company comparisons, reports, and research answers.
+It helps finance students, MBA candidates, researchers, and early-career analysts analyze financial documents such as annual reports, 10-K filings, earnings transcripts, investor presentations, and other business documents.
 
-The platform uses multiple specialized AI agents that work together to process documents, extract financial information, identify risks, compare companies, and answer research questions using document evidence and citations.
+Instead of manually extracting financial metrics, searching through lengthy reports, identifying risks, comparing companies, and preparing research reports, FinResearch AI combines **document processing, specialized AI agents, structured financial data, risk analysis, benchmarking, and evidence-based research** in one platform.
 
-> **Disclaimer:** FinResearch AI is an educational and research tool. Its financial analysis is informational only and should not be considered investment, legal, accounting, or tax advice. Important financial values should always be verified against the original source document.
+> **Disclaimer:** FinResearch AI is an educational and research tool. Its output is informational and should not be considered investment, legal, accounting, or tax advice. Important financial values should always be verified against the original source document.
 
 ---
 
-## ✨ Features
+## 🚀 Key Features
 
-### 🔐 Authentication
+### 📄 Intelligent Document Analysis
 
-* User registration
-* Credential-based login
-* Password hashing using bcryptjs
-* NextAuth-based authentication
-* Protected dashboard APIs
-* Session-based access control
-
-### 📚 Research Sessions
-
-Create dedicated research workspaces containing:
-
-* Session name
-* Description
-* Tags
-* Uploaded documents
-* Chat messages
-* Generated reports
-* Agent activity
-
-### 📄 Document Analysis
-
-Supported document formats:
+Upload and analyze:
 
 * PDF
 * DOCX
 * TXT
 
-The document processing pipeline:
+The document processing pipeline extracts readable text, cleans and normalizes it, identifies sections, creates searchable chunks, and stores the resulting evidence for downstream analysis.
 
-```text
-Upload Document
-      ↓
-Extract Text
-      ↓
-Create Document Record
-      ↓
-Clean & Split Content
-      ↓
-Create Searchable Chunks
-      ↓
-Financial Metric Extraction
-      ↓
-Risk Analysis
-      ↓
-Store Results
-      ↓
-Mark Document Completed
-```
+> Scanned or image-only PDFs may require OCR before reliable text extraction.
 
-> Scanned or image-only PDFs require OCR before they can be reliably analyzed.
+### 🤖 Multi-Agent AI Pipeline
+
+FinResearch AI uses five specialized agents:
+
+| Agent                | Responsibility                                            |
+| -------------------- | --------------------------------------------------------- |
+| **Document Agent**   | Extracts, cleans, sections, chunks, and indexes documents |
+| **Extraction Agent** | Extracts structured financial metrics                     |
+| **Risk Agent**       | Identifies financial and business risks                   |
+| **Benchmark Agent**  | Compares companies using metrics and risk profiles        |
+| **Research Agent**   | Answers questions using retrieved evidence and citations  |
 
 ### 📊 Financial Metrics
 
-The system can work with financial metrics including:
+The platform works with metrics such as:
 
 * Revenue
 * Revenue Growth
@@ -83,7 +54,7 @@ The system can work with financial metrics including:
 * EBITDA Margin
 * Total Assets
 * Total Liabilities
-* Shareholders' Equity
+* Equity
 * Cash
 * Debt
 * Current Ratio
@@ -99,38 +70,45 @@ The system can work with financial metrics including:
 
 ### ⚠️ Risk Analysis
 
-The Risk Agent identifies and stores financial risk information such as:
+The Risk Agent analyzes documents for risks including:
 
-* Liquidity risk
-* Debt risk
-* Regulatory risk
-* Market risk
-* Concentration risk
-* Operational risk
+* Liquidity Risk
+* Debt Risk
+* Regulatory Risk
+* Market Risk
+* Concentration Risk
+* Operational Risk
+* Revenue Risk
+* Margin Risk
+* Competition Risk
+* Going Concern Risk
 
-Each risk can contain:
+Risk records can contain:
 
 * Risk type
 * Severity
 * Title
 * Description
-* Source text
-* Page reference
+* Supporting source text
+* Page reference when available
 * Recommendation
 
 ### 🏢 Company Benchmarking
 
-Compare two or more companies using stored:
+Compare companies across:
 
 * Financial metrics
-* Ratios
 * Margins
-* Cash flow information
+* Ratios
+* Cash flow
+* Debt
 * Risk indicators
 
-### 📑 AI Reports
+The system presents structured comparisons to support financial research and analysis.
 
-Generate research reports containing:
+### 📑 AI-Generated Reports
+
+Generate structured reports containing:
 
 * Executive Summary
 * Key Findings
@@ -141,9 +119,9 @@ Generate research reports containing:
 
 ### 💬 Research Agent
 
-Ask questions about uploaded financial documents.
+Ask natural-language questions about your financial documents.
 
-Example questions:
+Example:
 
 ```text
 What is the revenue trend?
@@ -157,52 +135,74 @@ Compare cash flow and debt-to-equity across two companies.
 What evidence supports the concentration risk?
 ```
 
-The Research Agent uses document chunks, stored metrics, stored risks, and source citations.
+The Research Agent retrieves relevant document chunks, stored financial metrics, risk information, and source evidence before generating a response.
 
 ### 🔄 Local Fallback Mode
 
-Gemini is the preferred AI provider, but the application is designed to remain useful when Gemini is unavailable.
+Gemini is the preferred AI provider, but the application includes fallback behavior for supported workflows.
 
-Fallback functionality can provide:
+When AI services or quota are unavailable, the system can continue providing stored:
 
-* Stored financial metrics
-* Stored risk indicators
+* Financial metrics
+* Risk indicators
 * Relevant document excerpts
 * Document citations
 * Local research results
 
-This allows core document indexing and retrieval to continue even when AI quota or availability is limited.
+This helps keep core document indexing and retrieval useful even when the external AI provider is unavailable.
 
 ---
 
-# 🤖 Multi-Agent Architecture
-
-FinResearch AI uses five specialized agents:
+# 🏗️ System Architecture
 
 ```text
-                         ┌─────────────────────┐
-                         │   Financial File    │
-                         │   PDF / DOCX / TXT  │
-                         └──────────┬──────────┘
+                         ┌──────────────────────┐
+                         │      User Browser    │
+                         └──────────┬───────────┘
                                     │
                                     ▼
-                         ┌─────────────────────┐
-                         │   Document Agent    │
-                         │ Extract / Clean /   │
-                         │ Section / Chunk     │
-                         └──────────┬──────────┘
+                         ┌──────────────────────┐
+                         │      Next.js 16      │
+                         │      React 19        │
+                         │      App Router      │
+                         └──────────┬───────────┘
                                     │
-                    ┌───────────────┴───────────────┐
-                    │                               │
-                    ▼                               ▼
-          ┌──────────────────┐            ┌──────────────────┐
-          │ Extraction Agent │            │    Risk Agent    │
-          │ Financial Metrics│            │ Risk Detection   │
-          └────────┬─────────┘            └────────┬─────────┘
-                   │                               │
-                   └───────────────┬───────────────┘
-                                   │
-                                   ▼
-                         ┌─────────────────────┐
-                         │  Benchm
+              ┌─────────────────────┼─────────────────────┐
+              │                     │                     │
+              ▼                     ▼                     ▼
+       ┌─────────────┐      ┌──────────────┐      ┌──────────────┐
+       │  NextAuth   │      │  API Routes  │      │  Dashboard   │
+       │Authentication│      │              │      │     UI       │
+       └─────────────┘      └──────┬───────┘      └──────────────┘
+                                    │
+                                    ▼
+                         ┌──────────────────────┐
+                         │   Multi-Agent Layer  │
+                         └──────────┬───────────┘
+                                    │
+          ┌─────────────────────────┼─────────────────────────┐
+          │                         │                         │
+          ▼                         ▼                         ▼
+ ┌────────────────┐       ┌────────────────┐       ┌────────────────┐
+ │ Document Agent │       │Extraction Agent│       │   Risk Agent   │
+ └────────────────┘       └────────────────┘       └────────────────┘
+          │                         │                         │
+          └─────────────────────────┼─────────────────────────┘
+                                    │
+                       ┌────────────┴────────────┐
+                       │                         │
+                       ▼                         ▼
+              ┌────────────────┐       ┌──────────────────┐
+              │Benchmark Agent │       │ Research Agent   │
+              └────────────────┘       └────────┬─────────┘
+                                                 │
+                         ┌───────────────────────┼──────────────────────┐
+                         │                       │                      │
+                         ▼                       ▼                      ▼
+                 ┌──────────────┐       ┌──────────────┐       ┌──────────────┐
+                 │ PostgreSQL   │       │ Google Gemini│       │   Document   │
+                 │ + Drizzle ORM│       │     API      │       │  Processing  │
+                 └──────────────┘       └──────────────┘       └──────────────┘
 ```
+
+---
