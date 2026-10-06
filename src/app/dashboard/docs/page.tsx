@@ -30,7 +30,7 @@ export default function DocsPage() {
       <div className="w-56 flex-shrink-0 border-r border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-bold text-slate-900">Documentation</h2>
-          <button onClick={downloadDocs} className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" title="Download PDF">
+          <button onClick={downloadDocs} className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" title="Download Markdown documentation">
             <Download className="w-4 h-4" />
           </button>
         </div>
@@ -60,7 +60,7 @@ export default function DocsPage() {
             <div className="bg-gradient-to-r from-blue-600 to-violet-600 rounded-2xl p-6 text-white">
               <h2 className="text-xl font-bold mb-2">What is FinResearch AI?</h2>
               <p className="text-blue-100 text-sm leading-relaxed">
-                FinResearch AI is a professional financial research platform that uses five specialized AI agents working in a collaborative pipeline to automatically analyze company financial documents. It&apos;s designed for finance students, MBA candidates, and early-career analysts who want to develop financial analysis skills and experience how professional analyst workflows are augmented with multi-agent AI.
+                FinResearch AI is an educational financial research platform with an ordered document-processing pipeline plus on-demand research, benchmarking, and report agents. It&apos;s designed for finance students, MBA candidates, and early-career analysts who want to explore how evidence-based financial analysis workflows can be augmented with AI.
               </p>
             </div>
 
@@ -68,8 +68,8 @@ export default function DocsPage() {
               {[
                 { icon: FileText, title: "Document Processing", desc: "Upload 10-K filings, earnings transcripts, and annual reports. AI agents automatically parse, chunk, and index them." },
                 { icon: BarChart2, title: "Metric Extraction", desc: "Automatically extracts 25+ financial KPIs including revenue, margins, ratios, and cash flows from document text." },
-                { icon: AlertTriangle, title: "Risk Detection", desc: "Identifies financial red flags including liquidity risks, debt concerns, revenue concentration, and regulatory risks." },
-                { icon: TrendingUp, title: "Benchmarking", desc: "Side-by-side comparison of multiple companies across all financial metrics with AI-generated insights." },
+                { icon: AlertTriangle, title: "Risk Detection", desc: "Finds quote-backed disclosure signals and metric anomalies; cross-period alerts require comparable, source-matched values." },
+                { icon: TrendingUp, title: "Benchmarking", desc: "Compare latest stored metrics with fiscal periods and source documents; Gemini insights are optional." },
                 { icon: MessageSquare, title: "Research Agent", desc: "Conversational Q&A with exact source citations. Ask multi-part financial questions in plain English." },
                 { icon: BookOpen, title: "Report Generation", desc: "Compile all analysis into professional analyst-style research reports downloadable as text files." },
               ].map(({ icon: Icon, title, desc }) => (
@@ -83,7 +83,7 @@ export default function DocsPage() {
 
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
               <h3 className="font-semibold text-amber-800 mb-1">🎯 Key Principle</h3>
-              <p className="text-sm text-amber-700">Every insight is strictly grounded in source documents. The system NEVER generates information beyond what the documents contain.</p>
+              <p className="text-sm text-amber-700">The system validates source quotes and reported numbers before presenting research claims. These checks improve traceability but cannot prove every paraphrase is entailed; verify important conclusions against the original filing.</p>
             </div>
 
             <div>
@@ -113,7 +113,7 @@ export default function DocsPage() {
         {activeSection === "agents" && (
           <div className="max-w-3xl space-y-6 animate-fade-in">
             <h1 className="text-2xl font-bold text-slate-900">AI Agents Explained</h1>
-            <p className="text-slate-500">Five specialized agents work in a coordinated pipeline. Each agent has a specific role and hands off results to the next.</p>
+            <p className="text-slate-500">Document indexing, extraction, risk checks, and optional embeddings run sequentially. Benchmark, research, and report tasks are invoked on demand.</p>
 
             {[
               {
@@ -127,8 +127,8 @@ export default function DocsPage() {
                   "Clean and normalize text (remove noise)",
                   "Split document into ~1,500-character chunks with 200-char overlap",
                   "Identify document sections (Overview, Risk Factors, MD&A, etc.)",
-                  "Store chunks in database with section labels and page estimates",
-                  "Update document status to 'indexed'",
+                  "Store source chunks with section labels; page numbers remain blank when parsers cannot verify them",
+                  "Update document status and start sequential extraction, risk review, and optional embedding stages",
                 ],
                 output: "Searchable document chunks stored in database",
                 whyImportant: "AI models have input size limits. Chunking lets us search only relevant sections instead of processing entire 200-page documents each time.",
@@ -140,10 +140,10 @@ export default function DocsPage() {
                 icon: BarChart2,
                 description: "Reads document text and uses Gemini AI to extract specific financial numbers into structured format.",
                 steps: [
-                  "Take first 8,000 characters of document (where key financials appear)",
-                  "Build structured prompt asking for 25+ specific metric fields",
-                  "Request JSON response from Gemini AI (gemini-1.5-flash)",
-                  "Parse and validate returned numbers",
+                  "Use document text, capped to a beginning/end excerpt for large files",
+                  "Build a structured prompt for supported metric fields",
+                  "Request JSON from Gemini 3.6 Flash when configured; otherwise use the local parser",
+                  "Keep metric values only when their quotes and numeric evidence match",
                   "Convert monetary values to millions USD",
                   "Convert percentages to decimal ratios (0.25 = 25%)",
                   "Store in financial_metrics database table",
@@ -158,51 +158,77 @@ export default function DocsPage() {
                 icon: AlertTriangle,
                 description: "Scans the document specifically looking for red flags, material risks, and anomalies.",
                 steps: [
-                  "Take first 10,000 characters (risk factors often appear early)",
-                  "Build specialized risk-analysis prompt",
-                  "Request 3-8 risk items as JSON from Gemini AI",
-                  "Each item includes: type, severity, title, description, source quote, recommendation",
-                  "Validate severity is one of: critical, high, medium, low",
-                  "Store in risk_flags database table",
+                  "Run deterministic disclosure rules, metric anomaly checks, and comparable cross-period checks",
+                  "Optionally ask Gemini for additional risk findings",
+                  "Retain model findings only when source quotes and numeric claims validate",
+                  "Store source text, severity, description, and review recommendation in risk_flags",
                 ],
                 output: "Categorized risk flags with severity ratings, source quotes, and recommendations",
-                whyImportant: "Risk identification is critical for investment decisions. The 'Risk Factors' section of a 10-K can be 50+ pages. AI can summarize and categorize these efficiently.",
+                whyImportant: "Risk findings are screening signals, not audit conclusions or investment advice.",
               },
               {
                 number: "04",
+                name: "Embedding Agent",
+                color: "from-cyan-500 to-sky-600",
+                icon: Brain,
+                description: "Optionally indexes document chunks with semantic vectors when Gemini is configured.",
+                steps: [
+                  "Embed chunks in batches and store vectors plus model identifiers in JSONB",
+                  "Use semantic ranking only when the full collection has compatible vectors",
+                  "Fall back to keyword retrieval when vectors or provider configuration are unavailable",
+                ],
+                output: "Optional semantic retrieval index; lexical search remains available",
+                whyImportant: "Embeddings can find conceptually related passages without requiring a PostgreSQL vector extension for small collections.",
+              },
+              {
+                number: "05",
                 name: "Benchmark Agent",
                 color: "from-emerald-500 to-teal-600",
                 icon: TrendingUp,
                 description: "Compares multiple companies across all financial dimensions and generates insights.",
                 steps: [
                   "Receive list of company IDs to compare",
-                  "Fetch metrics and risks for each company",
-                  "Build comparison context with all data",
-                  "Send to Gemini with structured benchmarking prompt",
-                  "Generate comparative analysis with specific numbers",
-                  "Provide investment recommendations",
+                  "Fetch only documents and metrics the signed-in user can access (plus demo fixtures)",
+                  "Choose the latest fiscal metric per company and retain its source and period",
+                  "Warn when fiscal periods differ or are missing",
+                  "Use Gemini insights when configured; otherwise show deterministic comparisons",
+                  "Do not generate buy/sell recommendations",
                 ],
-                output: "Comparative analysis with ranked companies and investment insights",
+                output: "Period-aware comparison with source filenames, metric rows, and risk counts",
                 whyImportant: "Context is everything in finance. A 30% margin is great in retail but poor in software. Benchmarking provides that context automatically.",
               },
               {
-                number: "05",
+                number: "06",
                 name: "Research Agent",
                 color: "from-pink-500 to-rose-600",
                 icon: MessageSquare,
                 description: "Answers conversational financial questions using document evidence with citations.",
                 steps: [
                   "Receive user's question",
-                  "Search document chunks using keyword relevance scoring",
-                  "Retrieve top 3 relevant chunks per document",
-                  "Fetch related financial metrics and risk data",
-                  "Build comprehensive context from all sources",
-                  "Include conversation history (last 6 messages)",
-                  "Generate step-by-step response with source citations",
-                  "Return answer with exact document references",
+                  "Verify that the signed-in user owns the requested research session",
+                  "Decompose compound questions into separate retrieval steps",
+                  "Search only that session's documents with compatible embeddings or keyword fallback",
+                  "Require each generated claim to cite a retrieved source and exact quote",
+                  "Check numeric values, currencies, scales, and percentage units against the quote",
+                  "Return relevant source excerpts instead of a fabricated answer when synthesis fails",
                 ],
-                output: "Cited answer with source document references and reasoning trail",
-                whyImportant: "Allows non-experts to ask complex financial questions in plain English and get expert-level answers backed by actual document evidence.",
+                output: "Session-scoped answers with source citations, or transparent evidence excerpts when AI is unavailable",
+                whyImportant: "Makes source review easier while keeping the limits of automated quote validation explicit.",
+              },
+              {
+                number: "07",
+                name: "Report Agent",
+                color: "from-indigo-500 to-violet-600",
+                icon: BookOpen,
+                description: "Compiles an Executive Summary, deterministic Key Financials table, and supporting analysis.",
+                steps: [
+                  "Gather accessible stored metrics and source-document names",
+                  "Render the latest period per selected company in a Markdown table",
+                  "Generate detailed Gemini analysis when configured or an evidence-only local report otherwise",
+                  "Display the Executive Summary and render headings, lists, and financial tables in the report page",
+                ],
+                output: "Downloadable report with an Executive Summary and source/period-aware Key Financials table",
+                whyImportant: "The deterministic financial table stays available even when model generation is unavailable or omits the requested table.",
               },
             ].map(({ number, name, color, icon: Icon, description, steps, output, whyImportant }) => (
               <div key={name} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
@@ -265,25 +291,29 @@ Next.js 16 App Router (Server)
     │
     ├── Multi-Agent Pipeline (/src/lib/agents/)
     │       ├── documentAgent.ts    (Text extraction, chunking)
-    │       ├── extractionAgent.ts  (Metric extraction via Gemini)
-    │       ├── riskAgent.ts        (Risk scanning via Gemini)
-    │       ├── benchmarkAgent.ts   (Comparison via Gemini)
-    │       └── researchAgent.ts    (Q&A via Gemini)
+    │       ├── extractionAgent.ts  (Evidence-validated metrics)
+    │       ├── riskAgent.ts        (Deterministic and quote-validated risks)
+    │       ├── embeddingAgent.ts   (Optional semantic embeddings)
+    │       ├── benchmarkAgent.ts   (Period-aware comparisons)
+    │       ├── researchAgent.ts    (Session-scoped cited retrieval)
+    │       └── reportAgent.ts      (Executive Summary and Key Financials)
     │
     ├── Google Gemini AI API
-    │       ├── gemini-1.5-flash    (Fast: extraction, risks, chat)
-    │       └── gemini-1.5-pro      (Powerful: report generation)
+    │       ├── gemini-3.6-flash    (Configurable: extraction, risk review, research, benchmarks, reports)
+    │       └── gemini-embedding-001 (Optional semantic vectors)
     │
     └── PostgreSQL Database (Drizzle ORM)
             ├── users                (Authentication)
             ├── research_sessions    (Workspaces)
             ├── companies            (Company profiles)
-            ├── documents            (Uploaded files metadata)
-            ├── document_chunks      (Searchable text chunks)
+            ├── documents            (Uploaded files and processing status)
+            ├── document_chunks      (Searchable chunks and optional embeddings)
+            ├── document_processing_jobs (Durable retryable upload jobs)
             ├── financial_metrics    (Extracted numbers)
             ├── risk_flags           (Identified risks)
             ├── analysis_reports     (Generated reports)
-            ├── chat_messages        (Conversation history)
+            ├── chat_messages        (Session-owned conversation history)
+            ├── benchmark_comparisons (Comparison metadata table)
             └── agent_logs           (Activity audit trail)`}</pre>
             </div>
 
@@ -292,14 +322,12 @@ Next.js 16 App Router (Server)
               <div className="bg-white border border-slate-200 rounded-xl p-5">
                 <div className="space-y-3">
                   {[
-                    { step: 1, action: "User uploads file via drag-and-drop", detail: "Frontend sends FormData to POST /api/documents" },
-                    { step: 2, action: "Server extracts text from file", detail: "PDF → pdf-parse, DOCX → mammoth, TXT → direct read" },
-                    { step: 3, action: "Document record created in database", detail: "Status: 'processing'" },
-                    { step: 4, action: "Agent pipeline runs asynchronously", detail: "User gets immediate response; agents work in background" },
-                    { step: 5, action: "Document Agent chunks the text", detail: "~1500 chars per chunk, stored in document_chunks table" },
-                    { step: 6, action: "Extraction Agent calls Gemini API", detail: "Sends document excerpt, receives structured JSON metrics" },
-                    { step: 7, action: "Risk Agent calls Gemini API", detail: "Sends document excerpt, receives risk flags JSON array" },
-                    { step: 8, action: "Document status updated to 'completed'", detail: "Frontend polls and shows updated status" },
+                    { step: 1, action: "Validate and extract the uploaded file", detail: "PDF → pdf-parse, DOCX → mammoth, TXT → direct read; empty/scanned files are rejected" },
+                    { step: 2, action: "Persist document and durable job together", detail: "A PostgreSQL transaction records the queued job before returning the upload response" },
+                    { step: 3, action: "Claim and process the job sequentially", detail: "Document indexing → metric extraction → risk checks → optional embeddings" },
+                    { step: 4, action: "Recover interrupted attempts", detail: "A scheduled, secret-protected worker retries due or stale jobs with backoff" },
+                    { step: 5, action: "Record stage status and evidence", detail: "The UI shows indexed chunks, metric/risk evidence, embedding status, and agent activity" },
+                    { step: 6, action: "Finish as completed, partial, or failed", detail: "Exhausted jobs are marked failed; document status reflects any partial results" },
                   ].map(({ step, action, detail }) => (
                     <div key={step} className="flex items-start gap-3">
                       <div className="w-6 h-6 bg-blue-600 text-white rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0">{step}</div>
@@ -318,18 +346,20 @@ Next.js 16 App Router (Server)
         {activeSection === "database" && (
           <div className="max-w-3xl space-y-6 animate-fade-in">
             <h1 className="text-2xl font-bold text-slate-900">Database Schema</h1>
-            <p className="text-slate-500">PostgreSQL database with 10 tables managed via Drizzle ORM (type-safe SQL)</p>
+            <p className="text-slate-500">PostgreSQL database with 12 schema tables managed via Drizzle ORM (type-safe SQL)</p>
 
             {[
               { table: "users", cols: ["id (UUID)", "email (unique)", "name", "password (hashed)", "role", "created_at"] },
               { table: "research_sessions", cols: ["id", "user_id (FK→users)", "name", "description", "status", "tags[]", "created_at", "updated_at"] },
               { table: "companies", cols: ["id", "name", "ticker", "sector", "industry", "description", "is_seeded", "created_at"] },
-              { table: "documents", cols: ["id", "session_id (FK)", "company_id (FK)", "user_id (FK)", "file_name", "file_type", "file_size", "document_type", "fiscal_year", "content (TEXT)", "processing_status", "chunk_count"] },
-              { table: "document_chunks", cols: ["id", "document_id (FK)", "chunk_index", "content (TEXT)", "page_number", "section", "created_at"] },
-              { table: "financial_metrics", cols: ["id", "document_id (FK)", "company_id (FK)", "fiscal_year", "revenue", "gross_margin", "operating_margin", "net_margin", "ebitda", "total_assets", "total_equity", "current_ratio", "debt_to_equity", "roe", "eps", "free_cash_flow", "...25+ more"] },
+              { table: "documents", cols: ["id", "session_id (FK)", "company_id (FK)", "user_id (FK)", "file_name", "document_type", "fiscal_year", "content (TEXT)", "processing_status", "embedding_status", "chunk_count"] },
+              { table: "document_chunks", cols: ["id", "document_id (FK)", "chunk_index", "content (TEXT)", "page_number (nullable)", "section", "embedding (JSONB)", "embedding_model", "created_at"] },
+              { table: "document_processing_jobs", cols: ["id", "document_id (unique FK)", "status", "attempts", "max_attempts", "next_attempt_at", "locked_at", "last_error"] },
+              { table: "financial_metrics", cols: ["id", "document_id (FK)", "company_id (FK)", "fiscal_year", "fiscal_period", "revenue", "gross_margin", "operating_margin", "net_margin", "ebitda", "total_assets", "total_liabilities", "total_equity", "current_ratio", "debt_to_equity", "roe", "eps", "free_cash_flow", "...25+ fields"] },
               { table: "risk_flags", cols: ["id", "document_id (FK)", "company_id (FK)", "risk_type", "severity", "title", "description", "source_text", "recommendation", "created_at"] },
               { table: "analysis_reports", cols: ["id", "session_id", "user_id", "title", "report_type", "companies[]", "executive_summary", "full_report_content", "recommendations[]", "status", "created_at"] },
               { table: "chat_messages", cols: ["id", "session_id (FK)", "user_id (FK)", "role (user/assistant)", "content", "citations (JSONB)", "agent_type", "reasoning", "created_at"] },
+              { table: "benchmark_comparisons", cols: ["id", "session_id (FK)", "user_id (FK)", "title", "company_ids", "metrics (JSONB)", "insights"] },
               { table: "agent_logs", cols: ["id (serial)", "session_id", "document_id", "agent_name", "action", "status", "details", "duration", "created_at"] },
             ].map(({ table, cols }) => (
               <div key={table} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -352,7 +382,7 @@ Next.js 16 App Router (Server)
         {activeSection === "api" && (
           <div className="max-w-3xl space-y-6 animate-fade-in">
             <h1 className="text-2xl font-bold text-slate-900">API Reference</h1>
-            <p className="text-slate-500">All API routes are under /api/ and require authentication (except /auth/ and /health)</p>
+            <p className="text-slate-500">API routes are under /api/. Most require a signed-in user; the health, seed, and scheduled worker endpoints use their documented access controls.</p>
 
             {[
               {
@@ -377,8 +407,10 @@ Next.js 16 App Router (Server)
                 routes: [
                   { method: "GET", path: "/api/documents", desc: "List documents (filter: ?sessionId=)" },
                   { method: "POST", path: "/api/documents", desc: "Upload document (multipart/form-data)", body: "FormData: file, sessionId?, documentType, fiscalYear, companyName, ticker" },
-                  { method: "GET", path: "/api/documents/[id]", desc: "Get document with metrics and risks" },
+                  { method: "GET", path: "/api/documents/[id]", desc: "Get accessible document with metrics, risks, chunks, embeddings, and activity" },
+                  { method: "POST", path: "/api/documents/[id]/embeddings", desc: "Start semantic indexing for an accessible document" },
                   { method: "DELETE", path: "/api/documents/[id]", desc: "Delete document" },
+                  { method: "GET", path: "/api/worker/documents", desc: "Recover one due job; requires Authorization: Bearer CRON_SECRET" },
                 ],
               },
               {
@@ -387,7 +419,7 @@ Next.js 16 App Router (Server)
                   { method: "GET", path: "/api/companies", desc: "List companies with latest metrics" },
                   { method: "GET", path: "/api/metrics", desc: "Get metrics (filter: ?companyIds= or ?documentId=)" },
                   { method: "GET", path: "/api/risks", desc: "Get risks (filter: ?companyIds= or ?documentId=)" },
-                  { method: "POST", path: "/api/benchmark", desc: "Run benchmark comparison", body: "{ companyIds: string[] }" },
+                  { method: "POST", path: "/api/benchmark", desc: "Compare accessible companies with fiscal periods, source documents, and risk counts", body: "{ companyIds: string[], sessionId? }" },
                 ],
               },
               {
@@ -397,8 +429,16 @@ Next.js 16 App Router (Server)
                   { method: "POST", path: "/api/reports", desc: "Generate report", body: "{ companyIds, sessionId?, title? }" },
                   { method: "GET", path: "/api/reports/[id]", desc: "Get full report content" },
                   { method: "DELETE", path: "/api/reports/[id]", desc: "Delete report" },
-                  { method: "GET", path: "/api/chat", desc: "Get chat history (?sessionId=)" },
-                  { method: "POST", path: "/api/chat", desc: "Send message to Research Agent", body: "{ sessionId, content }" },
+                  { method: "GET", path: "/api/chat", desc: "Get history only when the signed-in user owns sessionId" },
+                  { method: "POST", path: "/api/chat", desc: "Run session-scoped cited research; failed synthesis returns an error", body: "{ sessionId, content }" },
+                ],
+              },
+              {
+                group: "Utilities",
+                routes: [
+                  { method: "GET", path: "/api/health", desc: "Check database connectivity; detailed database errors are kept in server logs" },
+                  { method: "GET", path: "/api/seed", desc: "Local development only; disabled in production" },
+                  { method: "POST", path: "/api/seed", desc: "Production seeding requires the SEED_SECRET value in x-seed-secret" },
                 ],
               },
             ].map(({ group, routes }) => (
@@ -434,7 +474,7 @@ Next.js 16 App Router (Server)
               {
                 step: 1,
                 title: "Install Node.js",
-                content: "Download from nodejs.org (choose LTS version 18 or higher)\nVerify installation: node --version\nYou should see v18.x.x or higher",
+                content: "Install Node.js 20.9 or newer from nodejs.org\nVerify installation: node --version\nNext.js 16 requires a supported modern Node.js runtime",
               },
               {
                 step: 2,
@@ -448,18 +488,18 @@ Next.js 16 App Router (Server)
               },
               {
                 step: 4,
-                title: "Get Gemini API Key (FREE)",
-                content: "1. Go to https://aistudio.google.com/\n2. Sign in with Google account\n3. Click 'Get API Key' → 'Create API Key'\n4. Copy the key (starts with AIzaSy...)\n5. Keep it secret — never share it!",
+                title: "Optional: Get a Gemini API Key",
+                content: "Without a key, evidence extraction, keyword retrieval, and transparent local fallbacks still work.\nFor model analysis or embeddings, create a key at https://aistudio.google.com/\nKeep the key private and never commit it to Git.",
               },
               {
                 step: 5,
                 title: "Configure .env file",
-                content: "Create a file named .env in the project root:\n\nDATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/app_db\nNEXTAUTH_SECRET=generate-with-openssl-rand-base64-32\nNEXTAUTH_URL=http://localhost:3000\nGEMINI_API_KEY=your-key-here",
+                content: "Create .env in the project root (never commit it):\n\nDATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/app_db\nNEXTAUTH_SECRET=generate-with-openssl-rand-base64-32\nNEXTAUTH_URL=http://localhost:3000\n# Optional AI configuration\nGEMINI_API_KEY=\nGEMINI_MODEL=gemini-3.6-flash\nGEMINI_PRO_MODEL=gemini-3.6-flash\nGEMINI_EMBEDDING_MODEL=gemini-embedding-001\n# Required for scheduled recovery in production\nCRON_SECRET=\n# Only for deliberate production demo seeding\nSEED_SECRET=",
               },
               {
                 step: 6,
                 title: "Install & Run",
-                content: "# Install dependencies:\nnpm install\n\n# Push database schema:\nnpx drizzle-kit push\n\n# Start development server:\nnpm run dev\n\n# Open in browser:\nhttp://localhost:3000\n\n# Load demo data:\ncurl http://localhost:3000/api/seed",
+                content: "# Install the locked dependencies:\nnpm ci\n\n# Apply checked-in migrations to a NEW empty database:\nnpx drizzle-kit migrate\n\n# Start development server:\nnpm run dev\n\n# Open in browser:\nhttp://localhost:3000\n\n# Optional local-only demo seed:\ncurl http://localhost:3000/api/seed\n\n# Do not replay the initial migration against an existing push-initialized DB.",
               },
             ].map(({ step, title, content }) => (
               <div key={step} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -477,18 +517,19 @@ Next.js 16 App Router (Server)
 
         {activeSection === "deployment" && (
           <div className="max-w-3xl space-y-6 animate-fade-in">
-            <h1 className="text-2xl font-bold text-slate-900">Deployment Guide (Free Tools)</h1>
-            <p className="text-slate-500">Deploy FinResearch AI for free using Vercel + Neon PostgreSQL</p>
+            <h1 className="text-2xl font-bold text-slate-900">Deployment Guide</h1>
+            <p className="text-slate-500">Deploy with Vercel + Neon PostgreSQL or another Node.js host; review current provider limits and costs.</p>
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-4">Uploaded text is stored in PostgreSQL. If Gemini is configured, document excerpts and research prompts are sent to Google&apos;s API; review data-handling and contractual requirements before uploading confidential material.</p>
 
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-              <h2 className="font-bold text-emerald-800 mb-1">✅ Recommended: Vercel + Neon (Both 100% Free)</h2>
-              <p className="text-sm text-emerald-700">Vercel is made by the Next.js team — perfect for Next.js apps. Neon provides free serverless PostgreSQL.</p>
+              <h2 className="font-bold text-emerald-800 mb-1">Recommended: Vercel + Neon</h2>
+              <p className="text-sm text-emerald-700">Both services offer managed Next.js/PostgreSQL hosting. Plan limits and pricing vary, so confirm Cron frequency and function duration support before deployment.</p>
             </div>
 
             {[
               {
                 phase: "Phase 1",
-                title: "Set Up Neon Database (Free PostgreSQL)",
+                title: "Set Up a Managed PostgreSQL Database",
                 steps: [
                   "Go to neon.tech and click 'Sign Up' (use GitHub account)",
                   "Click 'New Project'",
@@ -501,18 +542,12 @@ Next.js 16 App Router (Server)
               },
               {
                 phase: "Phase 2",
-                title: "Push Code to GitHub",
+                title: "Push the repository branch to GitHub",
                 steps: [
-                  "Create GitHub account at github.com (free)",
-                  "Go to github.com and click 'New Repository'",
-                  "Name it 'finresearch-ai', make it Public or Private",
-                  "Click 'Create Repository'",
-                  "In your local project folder, run:",
-                  "  git init",
-                  "  git add .",
-                  "  git commit -m 'Initial commit'",
-                  "  git remote add origin https://github.com/YOUR-USERNAME/finresearch-ai.git",
-                  "  git push -u origin main",
+                  "Use the existing Git clone; do not run git init inside it",
+                  "Push your working branch to the configured GitHub remote",
+                  "Never commit .env files, API keys, private documents, or database credentials",
+                  "Confirm the checked-in SQL migrations and vercel.json are on that branch",
                 ],
               },
               {
@@ -523,24 +558,27 @@ Next.js 16 App Router (Server)
                   "Click 'New Project'",
                   "Find your GitHub repo and click 'Import'",
                   "Vercel auto-detects Next.js — no config needed!",
-                  "Click 'Environment Variables' and add:",
+                  "Set Preview and Production environment variables separately:",
                   "  DATABASE_URL = your Neon connection string",
-                  "  NEXTAUTH_SECRET = run 'openssl rand -base64 32' locally",
-                  "  NEXTAUTH_URL = https://your-app.vercel.app (your Vercel URL)",
-                  "  GEMINI_API_KEY = your Google AI Studio key",
-                  "Click 'Deploy' and wait 2-3 minutes",
-                  "Your app is live!",
+                  "  NEXTAUTH_SECRET = a strong, unique secret",
+                  "  NEXTAUTH_URL = your exact public HTTPS origin",
+                  "  CRON_SECRET = a strong secret for scheduled job recovery",
+                  "  GEMINI_API_KEY = optional; without it, local evidence fallbacks remain available",
+                  "  GEMINI_MODEL / GEMINI_PRO_MODEL = optional configurable analysis models",
+                  "  GEMINI_EMBEDDING_MODEL = gemini-embedding-001 (optional semantic search)",
+                  "Deploy, then verify health, authentication, uploads, research, and reports",
                 ],
               },
               {
                 phase: "Phase 4",
-                title: "Initialize Production Database",
+                title: "Apply migrations and configure recovery",
                 steps: [
-                  "Update your local .env DATABASE_URL to the Neon connection string",
-                  "Run: npx drizzle-kit push",
-                  "This creates all tables in Neon",
-                  "Seed demo data: curl https://your-app.vercel.app/api/seed",
-                  "Visit your Vercel URL and login with demo@finresearch.ai / demo123456",
+                  "Back up the intended database and identify whether it is new or was initialized with drizzle-kit push",
+                  "For a NEW empty database, run npx drizzle-kit migrate from a trusted machine or CI job using its DATABASE_URL",
+                  "For a push-initialized database, do not replay 0000; review and safely reconcile 0001 and 0002 first",
+                  "Set CRON_SECRET and confirm the host can call /api/worker/documents on its schedule",
+                  "Production demo seeding is disabled for GET; only when needed, set SEED_SECRET and use POST with the matching x-seed-secret header",
+                  "Smoke-test login, upload processing, citations, reports, and one recovered job",
                 ],
               },
             ].map(({ phase, title, steps }) => (
@@ -572,31 +610,31 @@ Next.js 16 App Router (Server)
               {
                 step: 1,
                 title: "Load Demo Data",
-                desc: "On the Dashboard, click 'Load Demo Data'. This instantly populates Apple, Microsoft, Tesla, and Amazon 2023 annual reports with all metrics and risks pre-analyzed.",
-                tip: "This works even without a GEMINI_API_KEY — the seed data includes pre-computed metrics!",
+                desc: "In local development, initialize the empty database with the demo fixtures for Apple, Microsoft, Tesla, and Amazon.",
+                tip: "Fixture metrics and risk examples are illustrative and should be checked against their cited source text."
               },
               {
                 step: 2,
                 title: "Explore the Dashboard",
-                desc: "The dashboard shows: total companies, documents, sessions, reports, and risk flags. The Agent Pipeline Status bar shows all 5 agents are ready. The Financial Overview chart shows revenue vs net margins.",
+                desc: "The dashboard summarizes your documents, sessions, reports, metrics, and risk flags. Upload processing runs sequentially; research, benchmarks, and reports run on demand.",
               },
               {
                 step: 3,
                 title: "View Financial Metrics",
                 desc: "Go to Financial Metrics to see interactive charts. Toggle between Revenue/EBITDA, Profitability Margins, Key Ratios, and Cash Flow. The performance radar chart shows relative strengths.",
-                tip: "Microsoft has the highest operating margin (41.8%). Amazon has the highest revenue ($574.8B).",
+                tip: "Check each metric's source document and fiscal period before drawing comparisons."
               },
               {
                 step: 4,
                 title: "Analyze Risks",
                 desc: "Go to Risk Analysis. Filter by severity to see Critical risks first. Click any risk card to see: the exact source quote from the document, severity rating, and analyst recommendation.",
-                tip: "Tesla's margin compression from 28.5% to 18.2% is flagged as CRITICAL.",
+                tip: "A red flag is a screening signal, not an audit opinion or investment recommendation."
               },
               {
                 step: 5,
                 title: "Run Benchmarking",
-                desc: "Go to Benchmarking. Select 2-4 companies and click 'Compare'. See side-by-side charts and a detailed comparison table.",
-                tip: "Add your GEMINI_API_KEY to get AI-generated comparative insights!",
+                desc: "Go to Benchmarking. Select 2-8 accessible companies and click 'Compare'. Review the side-by-side charts, source filenames, fiscal periods, and detailed comparison table.",
+                tip: "A Gemini key is optional; without it, deterministic comparisons still include periods, source documents, and risk counts."
               },
               {
                 step: 6,
@@ -607,13 +645,13 @@ Next.js 16 App Router (Server)
                 step: 7,
                 title: "Research Agent Chat",
                 desc: "Go to Research Agent. Select a session. Try asking: 'What is Apple's revenue growth compared to Microsoft?' You'll get a cited answer with exact source references.",
-                tip: "Requires GEMINI_API_KEY for full AI responses. Demo mode shows a sample response.",
+                tip: "A Gemini key enables synthesis. Without one, retrieval shows matching document excerpts and citations—never canned sample statistics."
               },
               {
                 step: 8,
                 title: "Upload Your Own Documents",
                 desc: "Go to Documents → Upload Document. Fill in company details. Drag and drop a PDF, DOCX, or TXT financial document. Watch the agents process it automatically.",
-                tip: "Best results with plaintext 10-K filings from SEC EDGAR (https://www.sec.gov/cgi-bin/browse-edgar)",
+                tip: "PDF/DOCX/TXT are supported; image-only PDFs need OCR. Page numbers are not fabricated when the parser cannot verify them.",
               },
             ].map(({ step, title, desc, tip }) => (
               <div key={step} className="bg-white border border-slate-200 rounded-xl p-5">
@@ -648,19 +686,19 @@ Next.js 16 App Router (Server)
                 { term: "Gross Profit", def: "Revenue minus Cost of Goods Sold (COGS). Shows how much money is left after paying for what you sold." },
                 { term: "Gross Margin", def: "Gross Profit / Revenue × 100. Example: 42.9% means 42.9 cents of gross profit per $1 of revenue." },
                 { term: "EBITDA", def: "Earnings Before Interest, Taxes, Depreciation, and Amortization. A measure of core operating profitability." },
-                { term: "Operating Income", def: "EBITDA minus depreciation and amortization. Also called 'EBIT' (earnings before interest and taxes)." },
+                { term: "Operating Income", def: "Profit from a company's core operations before non-operating items, interest, and taxes; statement labels and adjustments can vary." },
                 { term: "Net Income", def: "Final profit after ALL expenses including taxes and interest. Also called 'bottom line'." },
                 { term: "EPS (Earnings Per Share)", def: "Net Income / Total Shares Outstanding. Shows how much profit each share of stock earned." },
                 { term: "Free Cash Flow (FCF)", def: "Operating Cash Flow minus Capital Expenditures. Real cash a company can use for growth, buybacks, or dividends." },
-                { term: "Current Ratio", def: "Current Assets / Current Liabilities. Measures ability to pay short-term debts. >1.0 is generally healthy." },
-                { term: "D/E Ratio (Debt-to-Equity)", def: "Total Debt / Shareholders Equity. Measures financial leverage. High D/E means more debt risk." },
-                { term: "ROE (Return on Equity)", def: "Net Income / Shareholders Equity. Measures how efficiently the company uses shareholder money. Higher is better." },
+                { term: "Current Ratio", def: "Current assets / current liabilities. A short-term liquidity indicator; interpretation depends on the business model, industry, and reporting period." },
+                { term: "D/E Ratio (Debt-to-Equity)", def: "Debt / shareholders' equity. Indicates leverage; definitions and appropriate levels differ across industries, and negative equity can make the ratio misleading." },
+                { term: "ROE (Return on Equity)", def: "Net income / shareholders' equity. Measures profit relative to equity; high values can reflect leverage or very small/negative equity, so compare with context." },
                 { term: "ROA (Return on Assets)", def: "Net Income / Total Assets. Shows how efficiently company uses all its assets to generate profit." },
                 { term: "Operating Margin", def: "Operating Income / Revenue. Shows profitability from core business before interest and taxes." },
-                { term: "Net Margin", def: "Net Income / Revenue. Final profit as a percentage of revenue. Microsoft's 34.1% is exceptional." },
-                { term: "Capital Expenditures (CapEx)", def: "Money spent on physical assets (buildings, equipment, servers). Amazon's $52.7B CapEx shows AWS infrastructure investment." },
+                { term: "Net Margin", def: "Net income / revenue. Profit as a share of revenue; compare across similar businesses and periods." },
+                { term: "Capital Expenditures (CapEx)", def: "Spending on long-lived assets such as buildings, equipment, or servers. Interpret alongside operating cash flow, free cash flow, and management's plans." },
                 { term: "MD&A", def: "Management's Discussion and Analysis. Section of 10-K where management explains results in their own words." },
-                { term: "Going Concern", def: "Auditor's warning that a company may not survive the next 12 months. A very serious red flag." },
+                { term: "Going Concern", def: "The assumption that a business can continue operating. A disclosed substantial-doubt warning deserves review but does not by itself establish that failure is certain." },
                 { term: "WACC", def: "Weighted Average Cost of Capital. The minimum return rate a company must earn to satisfy all investors." },
               ].map(({ term, def }) => (
                 <div key={term} className="bg-white border border-slate-200 rounded-xl p-4 flex gap-4">

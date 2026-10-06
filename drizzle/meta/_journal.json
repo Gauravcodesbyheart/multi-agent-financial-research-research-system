@@ -8,6 +8,20 @@
       "when": 1789748621070,
       "tag": "0000_bizarre_enchantress",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791032447026,
+      "tag": "0001_embeddings_and_pipeline_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791035166579,
+      "tag": "0002_durable_document_jobs",
+      "breakpoints": true
     }
   ]
 }

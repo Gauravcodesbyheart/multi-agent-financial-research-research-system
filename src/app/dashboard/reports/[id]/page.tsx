@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useParams } from "next/navigation";
 import { ArrowLeft, BookOpen, Download, Loader2, Brain, Building2, RefreshCw } from "lucide-react";
 import Link from "next/link";
@@ -18,15 +19,61 @@ interface Report {
   createdAt: string;
 }
 
-function renderMarkdown(text: string): string {
-  return text
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/^\- (.+)$/gm, '<li>$1</li>')
-    .replace(/\n\n/g, '</p><p>')
-    .trim();
+function splitTableRow(line: string): string[] {
+  return line.trim().replace(/^\|/, "").replace(/\|$/, "")
+    .split(/(?<!\\)\|/)
+    .map((cell) => cell.trim().replace(/\\\|/g, "|"));
+}
+
+function renderReportContent(text: string): ReactNode[] {
+  const lines = text.split(/\r?\n/);
+  const rendered: ReactNode[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    if (/^\s*\|.*\|\s*$/.test(line) && /^\s*\|(?:\s*:?-{3,}:?\s*\|)+\s*$/.test(lines[index + 1] || "")) {
+      const headers = splitTableRow(line);
+      index += 2;
+      const rows: string[][] = [];
+      while (index < lines.length && /^\s*\|.*\|\s*$/.test(lines[index])) {
+        rows.push(splitTableRow(lines[index]));
+        index += 1;
+      }
+      rendered.push(
+        <div key={`table-${index}`} className="my-4 overflow-x-auto rounded-lg border border-slate-200">
+          <table className="min-w-full border-collapse text-left text-xs">
+            <thead className="bg-slate-50 text-slate-700">
+              <tr>{headers.map((cell, column) => <th key={column} className="whitespace-nowrap border-b border-slate-200 px-3 py-2 font-semibold">{cell}</th>)}</tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rowIndex) => (
+                <tr key={rowIndex} className="odd:bg-white even:bg-slate-50/60">
+                  {headers.map((_, column) => <td key={column} className="border-b border-slate-100 px-3 py-2 align-top text-slate-600">{row[column] || "N/A"}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+
+    if (line.startsWith("# ")) rendered.push(<h1 key={index} className="mt-6 mb-3 text-2xl font-bold text-slate-900">{line.slice(2)}</h1>);
+    else if (line.startsWith("## ")) rendered.push(<h2 key={index} className="mt-5 mb-2 border-b border-slate-200 pb-1 text-xl font-semibold text-slate-800">{line.slice(3)}</h2>);
+    else if (line.startsWith("### ")) rendered.push(<h3 key={index} className="mt-4 mb-1 text-base font-semibold text-slate-700">{line.slice(4)}</h3>);
+    else if (/^\s*(?:[-*]|\d+[.)])\s+/.test(line)) {
+      const list: string[] = [];
+      while (index < lines.length && /^\s*(?:[-*]|\d+[.)])\s+/.test(lines[index])) {
+        list.push(lines[index].replace(/^\s*(?:[-*]|\d+[.)])\s+/, ""));
+        index += 1;
+      }
+      rendered.push(<ul key={`list-${index}`} className="my-2 list-disc space-y-1 pl-5 text-sm text-slate-600">{list.map((item, itemIndex) => <li key={itemIndex}>{item}</li>)}</ul>);
+      continue;
+    } else if (line.trim()) rendered.push(<p key={index} className="my-2 text-sm leading-relaxed text-slate-600">{line}</p>);
+    index += 1;
+  }
+  return rendered;
 }
 
 export default function ReportDetailPage() {
@@ -34,17 +81,23 @@ export default function ReportDetailPage() {
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadReport();
-  }, [id]);
-
-  async function loadReport() {
+  const loadReport = useCallback(async () => {
     if (!id) return;
     setLoading(true);
-    const res = await fetch(`/api/reports/${id}`);
-    if (res.ok) setReport((await res.json()).report);
-    setLoading(false);
-  }
+    try {
+      const res = await fetch(`/api/reports/${id}`);
+      if (res.ok) setReport((await res.json()).report);
+    } catch (error) {
+      console.error("Failed to load report:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadReport(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadReport]);
 
   function downloadReport() {
     if (!report) return;
@@ -158,30 +211,8 @@ export default function ReportDetailPage() {
                 <Brain className="w-5 h-5 text-blue-600" />
                 <h2 className="font-semibold text-slate-900">Full Analysis Report</h2>
               </div>
-              <div className="report-content prose-sm max-w-none">
-                <div
-                  className="text-slate-700 leading-relaxed whitespace-pre-wrap"
-                  style={{ fontFamily: "inherit" }}
-                >
-                  {report.fullReportContent.split('\n').map((line, i) => {
-                    if (line.startsWith('# ')) {
-                      return <h1 key={i} className="text-2xl font-bold text-slate-900 mt-6 mb-3">{line.slice(2)}</h1>;
-                    }
-                    if (line.startsWith('## ')) {
-                      return <h2 key={i} className="text-xl font-semibold text-slate-800 mt-5 mb-2 border-b border-slate-200 pb-1">{line.slice(3)}</h2>;
-                    }
-                    if (line.startsWith('### ')) {
-                      return <h3 key={i} className="text-base font-semibold text-slate-700 mt-4 mb-1">{line.slice(4)}</h3>;
-                    }
-                    if (line.startsWith('- ') || line.startsWith('* ')) {
-                      return <li key={i} className="ml-4 text-sm text-slate-600">{line.slice(2)}</li>;
-                    }
-                    if (line.trim() === '') {
-                      return <div key={i} className="h-3" />;
-                    }
-                    return <p key={i} className="text-sm text-slate-600 leading-relaxed">{line}</p>;
-                  })}
-                </div>
+              <div className="report-content max-w-none">
+                {renderReportContent(report.fullReportContent)}
               </div>
             </div>
           )}

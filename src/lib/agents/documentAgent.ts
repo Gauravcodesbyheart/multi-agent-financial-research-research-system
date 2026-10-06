@@ -1,7 +1,9 @@
 // Document Agent — parses, chunks, and indexes financial documents
 import { db } from "@/db";
 import { documents, documentChunks, agentLogs } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
+import { cosineSimilarity, keywordRelevance } from "./analysisUtils";
+import { DEFAULT_GEMINI_EMBEDDING_MODEL } from "./embeddingAgent";
 
 export function chunkText(text: string, chunkSize = 1500, overlap = 200): string[] {
   const chunks: string[] = [];
@@ -78,9 +80,11 @@ export async function processDocument(documentId: string, content: string): Prom
     const sections = extractSections(cleanedContent);
 
     // Save chunks to DB
+    const chunkSize = 1500;
+    const overlap = 200;
     const chunkValues = chunks.map((chunk, index) => {
-      // Estimate which section this chunk belongs to
-      const charPosition = chunks.slice(0, index).join("").length;
+      // Account for overlap when mapping a chunk back to its section.
+      const charPosition = index * (chunkSize - overlap);
       let section = "General";
       let accumulated = 0;
       for (const sec of sections) {
@@ -96,18 +100,19 @@ export async function processDocument(documentId: string, content: string): Prom
         chunkIndex: index,
         content: chunk,
         section,
-        pageNumber: Math.floor(index / 3) + 1,
+        // The parser currently returns document text without page boundaries. Do not fabricate page citations.
+        pageNumber: null,
       };
     });
 
-    if (chunkValues.length > 0) {
-      // Delete existing chunks first
-      await db.delete(documentChunks).where(eq(documentChunks.documentId, documentId));
-      // Insert in batches of 50
-      for (let i = 0; i < chunkValues.length; i += 50) {
-        await db.insert(documentChunks).values(chunkValues.slice(i, i + 50));
-      }
+    // Reprocessing replaces all chunks and invalidates stale embeddings.
+    await db.delete(documentChunks).where(eq(documentChunks.documentId, documentId));
+    for (let i = 0; i < chunkValues.length; i += 50) {
+      await db.insert(documentChunks).values(chunkValues.slice(i, i + 50));
     }
+    await db.update(documents)
+      .set({ embeddingStatus: "pending", updatedAt: new Date() })
+      .where(eq(documents.id, documentId));
 
     // Update document status
     await db
@@ -145,30 +150,113 @@ export async function processDocument(documentId: string, content: string): Prom
   }
 }
 
+export interface RetrievedChunk {
+  documentId: string;
+  documentName?: string;
+  content: string;
+  section: string;
+  chunkIndex: number;
+  pageNumber: number | null;
+  score: number;
+  retrievalMethod: "embedding" | "keyword";
+}
+
 export async function searchDocumentChunks(
   documentId: string,
   query: string,
-  limit = 5
-): Promise<Array<{ content: string; section: string; chunkIndex: number }>> {
+  limit = 5,
+  queryEmbedding?: number[] | null,
+): Promise<RetrievedChunk[]> {
   const chunks = await db
     .select()
     .from(documentChunks)
     .where(eq(documentChunks.documentId, documentId))
-    .limit(100);
+    .orderBy(asc(documentChunks.chunkIndex));
 
-  // Simple keyword-based relevance scoring
-  const queryWords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+  const hasCompleteEmbeddingIndex = chunks.length > 0 && Boolean(queryEmbedding?.length) && chunks.every((chunk) =>
+    Array.isArray(chunk.embedding) &&
+    chunk.embeddingModel === DEFAULT_GEMINI_EMBEDDING_MODEL &&
+    chunk.embedding.length === queryEmbedding?.length
+  );
+
   const scored = chunks.map((chunk) => {
-    const text = chunk.content.toLowerCase();
-    const score = queryWords.reduce((acc, word) => {
-      const count = (text.match(new RegExp(word, "g")) || []).length;
-      return acc + count;
-    }, 0);
-    return { ...chunk, score };
+    if (hasCompleteEmbeddingIndex && queryEmbedding && chunk.embedding) {
+      return {
+        chunk,
+        score: cosineSimilarity(queryEmbedding, chunk.embedding),
+        retrievalMethod: "embedding" as const,
+      };
+    }
+    return {
+      chunk,
+      score: keywordRelevance(query, chunk.content),
+      retrievalMethod: "keyword" as const,
+    };
   });
 
   return scored
-    .sort((a, b) => b.score - a.score)
+    .filter((entry) => entry.score > (entry.retrievalMethod === "embedding" ? 0.08 : 0))
+    .sort((left, right) => right.score - left.score)
     .slice(0, limit)
-    .map((c) => ({ content: c.content, section: c.section || "General", chunkIndex: c.chunkIndex }));
+    .map(({ chunk, score, retrievalMethod }) => ({
+      documentId: chunk.documentId,
+      content: chunk.content,
+      section: chunk.section || "General",
+      chunkIndex: chunk.chunkIndex,
+      pageNumber: chunk.pageNumber,
+      score,
+      retrievalMethod,
+    }));
+}
+
+export async function searchDocumentCollection(
+  documentIds: string[],
+  query: string,
+  limit = 8,
+  queryEmbedding?: number[] | null,
+): Promise<RetrievedChunk[]> {
+  if (documentIds.length === 0) return [];
+  const chunks = await db
+    .select({
+      documentId: documentChunks.documentId,
+      documentName: documents.fileName,
+      content: documentChunks.content,
+      section: documentChunks.section,
+      chunkIndex: documentChunks.chunkIndex,
+      pageNumber: documentChunks.pageNumber,
+      embedding: documentChunks.embedding,
+      embeddingModel: documentChunks.embeddingModel,
+    })
+    .from(documentChunks)
+    .innerJoin(documents, eq(documentChunks.documentId, documents.id))
+    .where(inArray(documentChunks.documentId, documentIds))
+    .orderBy(asc(documentChunks.documentId), asc(documentChunks.chunkIndex))
+    .limit(5000);
+
+  const useEmbeddings = chunks.length > 0 && Boolean(queryEmbedding?.length) && chunks.every((chunk) =>
+    Array.isArray(chunk.embedding) &&
+    chunk.embeddingModel === DEFAULT_GEMINI_EMBEDDING_MODEL &&
+    chunk.embedding.length === queryEmbedding?.length
+  );
+  return chunks
+    .map((chunk) => ({
+      ...chunk,
+      score: useEmbeddings && queryEmbedding && chunk.embedding
+        ? cosineSimilarity(queryEmbedding, chunk.embedding)
+        : keywordRelevance(query, chunk.content),
+      retrievalMethod: useEmbeddings ? "embedding" as const : "keyword" as const,
+    }))
+    .filter((chunk) => chunk.score > (useEmbeddings ? 0.08 : 0))
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit)
+    .map((chunk) => ({
+      documentId: chunk.documentId,
+      documentName: chunk.documentName,
+      content: chunk.content,
+      section: chunk.section || "General",
+      chunkIndex: chunk.chunkIndex,
+      pageNumber: chunk.pageNumber,
+      score: chunk.score,
+      retrievalMethod: chunk.retrievalMethod,
+    }));
 }

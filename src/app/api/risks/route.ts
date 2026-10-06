@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
-import { riskFlags, companies } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { companies, documents, riskFlags } from "@/db/schema";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -13,27 +13,16 @@ export async function GET(req: NextRequest) {
   const companyIds = searchParams.get("companyIds")?.split(",").filter(Boolean) || [];
   const documentId = searchParams.get("documentId");
   const severity = searchParams.get("severity");
+  const visibility = or(eq(documents.userId, session.user.id), eq(documents.isSeeded, true));
+  const conditions = [visibility];
+  if (documentId) conditions.push(eq(riskFlags.documentId, documentId));
+  if (companyIds.length) conditions.push(inArray(riskFlags.companyId, companyIds));
+  if (severity) conditions.push(eq(riskFlags.severity, severity));
 
-  let query;
-  if (documentId) {
-    query = db
-      .select({ risk: riskFlags, company: companies })
-      .from(riskFlags)
-      .leftJoin(companies, eq(riskFlags.companyId, companies.id))
-      .where(eq(riskFlags.documentId, documentId));
-  } else if (companyIds.length > 0) {
-    query = db
-      .select({ risk: riskFlags, company: companies })
-      .from(riskFlags)
-      .leftJoin(companies, eq(riskFlags.companyId, companies.id))
-      .where(inArray(riskFlags.companyId, companyIds));
-  } else {
-    query = db
-      .select({ risk: riskFlags, company: companies })
-      .from(riskFlags)
-      .leftJoin(companies, eq(riskFlags.companyId, companies.id));
-  }
-
-  const risks = await query;
+  const risks = await db.select({ risk: riskFlags, company: companies })
+    .from(riskFlags)
+    .innerJoin(documents, eq(riskFlags.documentId, documents.id))
+    .leftJoin(companies, eq(riskFlags.companyId, companies.id))
+    .where(and(...conditions));
   return NextResponse.json({ risks });
 }

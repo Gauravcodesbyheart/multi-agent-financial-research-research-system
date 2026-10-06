@@ -1,1005 +1,528 @@
-# FinResearch AI
-## Complete Project Documentation and Free Deployment Manual
-
-**Version:** 2.0
-**Date:** September 19, 2026
-**Project:** Multi-Agent Financial Research System
+# FinResearch AI — Multi-Agent Financial Analysis System
+## Complete Project Documentation (Beginner-Friendly)
 
 ---
 
-## 1. Executive Overview
-
-FinResearch AI is a full-stack financial research workspace for finance students, MBA candidates, researchers, and early-career analysts. It converts annual reports, 10-K filings, earnings transcripts, investor presentations, and other financial documents into searchable evidence, structured metrics, risk indicators, company comparisons, reports, and conversational research answers.
-
-The system is designed around five cooperating agents:
-
-1. **Document Agent** extracts text, normalizes it, splits it into searchable chunks, detects sections, and indexes the result.
-2. **Extraction Agent** extracts financial metrics such as revenue, margins, income, assets, debt, ratios, EPS, and cash flow.
-3. **Risk Agent** identifies liquidity, debt, regulatory, market, concentration, and operational risks.
-4. **Benchmark Agent** compares companies across metrics and risk profiles.
-5. **Research Agent** answers questions using document evidence, stored metrics, stored risks, and citations.
-
-The application includes a demo dataset for Apple, Microsoft, Tesla, and Amazon. It also supports registration, credential login, research sessions, document upload, dashboards, charts, reports, and API access.
-
-> **Important limitation:** financial analysis is informational and educational. It is not investment, legal, accounting, or tax advice. Always verify extracted values against the original filing.
+## TABLE OF CONTENTS
+1. Project Overview
+2. What is This Project?
+3. System Architecture
+4. Multi-Agent Pipeline Explained
+5. Technology Stack
+6. Database Schema
+7. API Reference
+8. Setup & Installation Guide (Local)
+9. Deployment Guide
+10. How to Use the Platform
+11. Troubleshooting
 
 ---
 
-## 2. Product Capabilities
+## 1. PROJECT OVERVIEW
 
-### 2.1 Authentication
+FinResearch AI is a full-stack web application that uses multiple AI agents working together to analyze financial documents like annual reports (10-K filings), earnings transcripts, and investor presentations.
 
-- Create an account with name, email, and password.
-- Sign in with email and password.
-- JWT sessions are managed by NextAuth.
-- Passwords are hashed with bcryptjs.
-- Protected dashboard APIs require an authenticated session.
+**Target Users:** Finance students, MBA candidates, early-career analysts
 
-### 2.2 Research Sessions
-
-A session is a workspace for a research project. A session can contain:
-
-- A name and description.
-- Tags.
-- Uploaded documents.
-- Chat messages.
-- Generated reports.
-- Agent activity.
-
-### 2.3 Document Upload
-
-Supported formats:
-
-- PDF with selectable text.
-- DOCX.
-- TXT.
-
-The upload workflow stores the document, extracts content, creates chunks, extracts metrics, scans risks, and marks the document as completed. The database stores a short file type value (`pdf`, `docx`, or `txt`) so long MIME strings do not exceed the database column limit.
-
-Scanned or image-only PDFs require OCR before their text can be analyzed. The application cannot reliably extract financial values from a PDF that contains only page images.
-
-### 2.4 Financial Metrics
-
-The metric model supports:
-
-- Revenue and revenue growth.
-- Gross profit and gross margin.
-- Operating income and operating margin.
-- Net income and net margin.
-- EBITDA and EBITDA margin.
-- Total assets, liabilities, equity, cash, and debt.
-- Current ratio, quick ratio, debt-to-equity.
-- ROE, ROA, EPS, and P/E ratio.
-- Operating cash flow, capital expenditures, and free cash flow.
-- Raw extracted values and extraction metadata.
-
-### 2.5 Risk Analysis
-
-Risk records contain:
-
-- Risk type.
-- Severity.
-- Title.
-- Description.
-- Source text.
-- Page reference when available.
-- Recommendation.
-
-If Gemini is unavailable or quota is exhausted, the application uses a local fallback that detects labeled financial values and common risk indicators. Gemini remains the preferred provider when it is available.
-
-### 2.6 Benchmarking and Reports
-
-Benchmarking compares two or more companies using stored metrics and risks. Reports can contain:
-
-- Executive summary.
-- Key findings.
-- Metric comparisons.
-- Risk summary.
-- Recommendations.
-- Full report content.
-
-When AI quota is unavailable, the application uses stored data and fallback text where supported. Do not treat fallback text as equivalent to a full AI-generated analyst report.
-
-### 2.7 Research Agent
-
-The Research Agent searches document chunks, reads stored metric rows and risk rows, and sends a grounded prompt to Gemini. It returns an answer with source citations and reasoning metadata.
-
-When Gemini is unavailable, the Research Agent switches to Local Research Mode and returns:
-
-- The user question.
-- Stored metrics.
-- Stored risk indicators.
-- Relevant document excerpts.
-- Citations to document names and sections.
+**Key Problem Solved:** Manually extracting key metrics, identifying risks, and comparing companies across complex financial documents requires significant time, effort, and domain expertise. This system automates that workflow using specialized AI agents.
 
 ---
 
-## 3. Technology Architecture
+## 2. WHAT IS THIS PROJECT? (For Beginners)
 
-```text
-Browser
-  |
-  v
-Next.js 16 App Router
-  |-- React 19 UI
-  |-- NextAuth credential authentication
-  |-- API route handlers
-  |-- Server-side database access
-  |
-  +--> PostgreSQL
-  |      +--> Drizzle ORM
-  |      +--> users
-  |      +--> research_sessions
-  |      +--> companies
-  |      +--> documents
-  |      +--> document_chunks
-  |      +--> financial_metrics
-  |      +--> risk_flags
-  |      +--> analysis_reports
-  |      +--> chat_messages
-  |      +--> agent_logs
-  |
-  +--> Document processing
-  |      +--> pdf-parse 1.1.1
-  |      +--> mammoth for DOCX
-  |      +--> local text chunking
-  |
-  +--> Google Gemini API
-         +--> metric extraction
-         +--> risk analysis
-         +--> research answers
-         +--> reports and benchmarking
+### What is a 10-K Filing?
+A 10-K is a comprehensive annual report that publicly traded companies must file with the SEC (Securities and Exchange Commission). It contains:
+- Company overview and business description
+- Financial statements (income statement, balance sheet, cash flows)
+- Risk factors
+- Management's discussion and analysis (MD&A)
+- Notes to financial statements
+
+### What is a Multi-Agent AI System?
+Instead of having one AI do everything, we have specialized AI agents, each expert in one task:
+- Like a real investment bank where different analysts handle research, risk, and writing
+
+### What Does This System Do?
+1. You upload a financial document (or use pre-loaded ones)
+2. A durable job runs document indexing, metric extraction, risk checks, and optional embeddings in order
+3. You get source-checked metrics, evidence-backed risk signals, and period-aware comparisons
+4. You can ask questions in plain English and get cited answers
+
+---
+
+## 3. SYSTEM ARCHITECTURE
+
 ```
-
-### 3.1 Repository Layout
-
-```text
-src/app/                         Next.js pages and API routes
-src/app/api/                     Authentication and application APIs
-src/app/dashboard/               Dashboard screens
-src/db/schema.ts                 PostgreSQL schema definitions
-src/db/index.ts                  Drizzle database connection
-src/lib/auth.ts                  NextAuth configuration
-src/lib/seed.ts                  Demo data seeding
-src/lib/seedData.ts              Seed companies and documents
-src/lib/agents/                  Document, extraction, risk, benchmark, research agents
-public/                          Documentation and static files
-package.json                     Scripts and dependencies
-drizzle.config.json              Drizzle schema and database configuration
-```
-
-Correct file name: `drizzle.config.json`.
-
-### 3.2 Agent Pipeline
-
-```text
-Upload
-  |
-  v
-Extract PDF/DOCX/TXT text
-  |
-  v
-Create document database row
-  |
-  v
-Document Agent: clean, section, chunk, index
-  |
-  +--> Extraction Agent: metrics via Gemini or local fallback
-  |
-  +--> Risk Agent: risks via Gemini or local fallback
-  |
-  v
-Mark document completed
-```
-
-The document is useful even when Gemini fails. Core indexing must succeed first. Gemini failures should be treated as optional analysis failures, not as upload failures.
-
----
-
-## 4. Source Code Map
-
-### Frontend pages
-
-- `/` redirects authenticated users to `/dashboard` and others to `/login`.
-- `/login` provides credential login.
-- `/register` creates a user account.
-- `/dashboard` shows summary statistics and demo-data loading.
-- `/dashboard/sessions` manages research sessions.
-- `/dashboard/documents` lists and uploads documents.
-- `/dashboard/documents/[id]` shows content, metrics, and risks.
-- `/dashboard/companies` lists companies.
-- `/dashboard/metrics` displays financial charts and tables.
-- `/dashboard/risks` displays risk filters and cards.
-- `/dashboard/benchmark` compares companies.
-- `/dashboard/reports` creates and reads reports.
-- `/dashboard/research` provides the Research Agent chat.
-- `/dashboard/docs` contains in-app documentation.
-
-### API route map
-
-- `/api/auth/register` creates users.
-- `/api/auth/[...nextauth]` handles sign-in, sign-out, and sessions.
-- `/api/health` tests application and database health.
-- `/api/seed` loads demo data.
-- `/api/sessions` manages sessions.
-- `/api/sessions/[id]` reads, updates, and deletes one session.
-- `/api/documents` lists and uploads documents.
-- `/api/documents/[id]` reads or deletes one document.
-- `/api/companies` lists company data.
-- `/api/metrics` reads financial metrics.
-- `/api/risks` reads risks.
-- `/api/benchmark` generates comparisons.
-- `/api/reports` lists and creates reports.
-- `/api/reports/[id]` reads and deletes one report.
-- `/api/chat` reads and creates research chat messages.
-- `/api/dashboard` returns dashboard statistics.
-
----
-
-## 5. Prerequisites
-
-### Required
-
-- Windows, macOS, or Linux.
-- Node.js 20.9 or newer is recommended for Next.js 16.
-- npm.
-- PostgreSQL 14 or newer.
-- Git.
-
-### Optional
-
-- Docker Desktop for PostgreSQL.
-- Google AI Studio account and Gemini API key.
-- A searchable PDF viewer or OCR application for scanned filings.
-- A GitHub account for deployment.
-
-Check versions:
-
-```powershell
-node --version
-npm --version
-psql --version
-git --version
+User Browser
+    │
+    ▼
+Next.js 16 App (React Frontend + API Routes)
+    │
+    ├─── NextAuth authentication and per-user data access
+    │
+    ├─── Durable PostgreSQL document-job queue
+    │       └── sequential indexing → extraction → risk checks → optional embeddings
+    │
+    ├─── On-demand agents
+    │       ├── Benchmark Agent (period-aware comparisons)
+    │       ├── Research Agent (session-scoped cited retrieval)
+    │       └── Report Agent (Executive Summary + Key Financials)
+    │
+    ├─── Optional Google Gemini API
+    │       ├── gemini-3.6-flash (analysis and narrative generation)
+    │       └── gemini-embedding-001 (optional semantic search)
+    │
+    └─── PostgreSQL via Drizzle ORM
+            ├── users, research_sessions, companies, documents
+            ├── document_chunks, document_processing_jobs, financial_metrics
+            ├── risk_flags, analysis_reports, chat_messages
+            └── benchmark_comparisons, agent_logs
 ```
 
 ---
 
-## 6. Complete Local Installation on Windows
+## 4. MULTI-AGENT PIPELINE EXPLAINED
 
-### Step 1: Open the project
+### Agent 1: Document Agent
+**What it does:** Takes uploaded financial documents and processes them for AI analysis
+**Steps:**
+1. Receives file (PDF, DOCX, or TXT)
+2. Extracts text content
+3. Cleans and normalizes text
+4. Splits into ~1500-character chunks with 200-char overlap
+5. Identifies document sections (Business Overview, Risk Factors, etc.)
+6. Stores source chunks with section labels; page numbers remain blank when the parser cannot verify them
+7. Starts the sequential, recoverable processing stages
 
-```powershell
-cd "C:\Users\Dell\Desktop\INFOSYS SPRINGBOARD\multi-agent-financial-research-system"
+**Why chunking?** AI models have token limits. Breaking documents into smaller chunks lets us search and retrieve only relevant sections.
+
+### Agent 2: Extraction Agent
+**What it does:** Reads financial documents and extracts structured metrics
+**Extracts:**
+- Revenue, net income, gross profit
+- Margins: gross, operating, net, EBITDA
+- Balance sheet: assets, liabilities, equity, cash, debt
+- Ratios: current ratio, D/E ratio, ROE, ROA
+- Cash flows: operating, capital expenditures, free cash flow
+- Per share: EPS
+
+**How:** Uses Gemini JSON extraction when configured, validates each metric against an exact quote and matching numeric evidence, and fills supported values with a deterministic local parser when needed.
+
+### Agent 3: Risk Agent
+**What it does:** Combines deterministic disclosure checks, source-matched metric anomalies, and optional model findings.
+
+Checks include audit/going-concern language, accounting disclosures, liquidity warnings, balance-sheet anomalies, and cross-period debt, revenue, or margin movements. Trend checks require comparable periods and source evidence whose values match the stored metrics. Model-added findings are retained only when source quotes and numeric claims validate. These are screening signals, not audit conclusions.
+
+### Agent 4: Embedding Agent
+**What it does:** Optionally creates semantic vectors for document chunks using Gemini embeddings. Vectors are stored in JSONB with a model identifier; keyword search remains available if embeddings are not configured or compatible.
+
+### Agent 5: Benchmark Agent
+**What it does:** Compares accessible companies using their latest stored financial metrics and risk flags. It displays source documents and fiscal periods and warns when periods are missing or differ. The system does not generate buy/sell recommendations.
+
+### Agent 6: Research Agent (Conversational)
+**What it does:** Retrieves evidence from the signed-in user's selected research session. Session ownership is checked before reading history, writing messages, or searching documents.
+
+Each generated factual claim must use a retrieved citation and exact quote. Numeric values, currencies, scales, and percentage units must match the quote. When Gemini is unavailable, the agent returns relevant retrieved excerpts rather than canned statistics. Quote checks improve traceability but do not prove semantic entailment; verify important conclusions against the original filing.
+
+### Agent 7: Report Agent
+**What it does:** Creates an Executive Summary and a deterministic Key Financials table with periods and source filenames, then adds detailed analysis when Gemini is available. The table remains available in the local report fallback.
+
+---
+
+## 5. TECHNOLOGY STACK
+
+### Frontend
+- **Next.js 16** with App Router — React framework for server-side rendering
+- **React 19** — UI component library
+- **Tailwind CSS 4** — Utility-first CSS framework
+- **Recharts** — Charts and data visualization
+- **Lucide React** — Icon library
+- **react-hot-toast** — Notification toasts
+- **react-dropzone** — File drag-and-drop upload
+
+### Backend
+- **Next.js API Routes** — Serverless API endpoints
+- **NextAuth.js** — Authentication (JWT sessions)
+- **Drizzle ORM** — Type-safe database ORM
+- **bcryptjs** — Password hashing
+- **pdf-parse** — PDF text extraction
+- **mammoth** — DOCX text extraction
+
+### AI
+- **Google Gemini API** (@google/generative-ai), optional for model analysis
+  - `gemini-3.6-flash`: configurable default for extraction, risk review, research, benchmarking, and reports
+  - `gemini-embedding-001`: optional semantic retrieval
+
+### Database
+- **PostgreSQL** — Relational database
+- 12 schema tables, including durable document jobs and optional embeddings
+
+### Infrastructure
+- **Node.js 20.9+** — Server runtime
+- **npm** — Package manager
+
+---
+
+## 6. DATABASE SCHEMA
+
+### users
+Stores user accounts with hashed passwords.
+
+### research_sessions
+Named workspaces where users organize their analysis work. Each session can contain multiple documents and chat conversations.
+
+### companies
+Company profiles (name, ticker, sector, industry). Pre-seeded with Apple, Microsoft, Tesla, Amazon.
+
+### documents
+Uploaded financial documents with metadata, ownership, fiscal period, processing status, and embedding status.
+
+### document_chunks
+Split chunks from each document for searchable retrieval. Each chunk is approximately 1500 characters with section labeling; optional vectors and model names are stored in JSONB.
+
+### document_processing_jobs
+Durable, retryable processing jobs with attempts, due times, stale locks, and last-error details.
+
+### financial_metrics
+Extracted financial numbers linked to both document and company. Includes 25+ metric fields.
+
+### risk_flags
+Risk items identified by the Risk Agent. Includes severity, source text, and recommendations.
+
+### analysis_reports
+Generated research reports with executive summary and full analyst write-up.
+
+### chat_messages
+Research Agent conversation history with citations, scoped to a user-owned session.
+
+### benchmark_comparisons
+Comparison metadata schema for research sessions.
+
+### agent_logs
+Audit trail of all agent activities (for debugging and transparency).
+
+---
+
+## 7. API REFERENCE
+
+### Authentication
+- `POST /api/auth/register` — Create new user account
+- `POST /api/auth/signin` — Sign in (NextAuth)
+- `POST /api/auth/signout` — Sign out
+
+### Research Sessions
+- `GET /api/sessions` — List all user sessions
+- `POST /api/sessions` — Create session
+- `GET /api/sessions/[id]` — Get session details
+- `PATCH /api/sessions/[id]` — Update session
+- `DELETE /api/sessions/[id]` — Delete session
+
+### Documents
+- `GET /api/documents` — List the signed-in user's documents
+- `POST /api/documents` — Upload a document and atomically enqueue a durable job
+- `GET /api/documents/[id]` — Get an accessible document with metrics, risks, chunks, and activity
+- `POST /api/documents/[id]/embeddings` — Start optional semantic indexing
+- `DELETE /api/documents/[id]` — Delete an accessible document
+- `GET /api/worker/documents` — Recover one due job; requires `Authorization: Bearer $CRON_SECRET`
+
+### Companies
+- `GET /api/companies` — List companies and latest metrics visible to the signed-in user (including seeded demo data)
+
+### Financial Metrics
+- `GET /api/metrics` — Get visible metrics (optional `companyIds=id1,id2` or `documentId`)
+
+### Risk Analysis
+- `GET /api/risks` — Get visible risk flags (optional `companyIds=id1,id2`, `documentId`, or `severity`)
+
+### Benchmarking
+- `POST /api/benchmark` — Compare accessible companies, latest periods, source documents, and risks (body: `{ companyIds: string[], sessionId? }`)
+
+### Reports
+- `GET /api/reports` — List reports
+- `POST /api/reports` — Generate new report
+- `GET /api/reports/[id]` — Get full report
+- `DELETE /api/reports/[id]` — Delete report
+
+### Chat/Research Agent
+- `GET /api/chat?sessionId=xxx` — Read history only if the signed-in user owns the session
+- `POST /api/chat` — Ask a session-scoped research question (body: `{ sessionId, content }`); failures return an error, not a canned answer
+
+### Dashboard
+- `GET /api/dashboard` — Get dashboard summary stats
+
+### Utilities
+- `GET /api/health` — Check database connectivity; detailed errors stay in server logs
+- `GET /api/seed` — Local development only; returns an error in production
+- `POST /api/seed` — Seed intentionally; production requires `SEED_SECRET` in the `x-seed-secret` header
+
+---
+
+## 8. SETUP & INSTALLATION GUIDE (Local Development)
+
+### Prerequisites (Install These First)
+
+1. **Node.js** (version 20.9 or higher)
+   - Download from: https://nodejs.org/
+   - Verify: `node --version`
+
+2. **PostgreSQL** (version 14 or higher)
+   - Download from: https://www.postgresql.org/download/
+   - Or use Docker: `docker run -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres`
+   - Verify: `psql --version`
+
+3. **Git**
+   - Download from: https://git-scm.com/
+   - Verify: `git --version`
+
+### Step 1: Clone the Repository
+```bash
+git clone https://github.com/Gauravcodesbyheart/multi-agent-financial-research-research-system.git
+cd multi-agent-financial-research-research-system
 ```
 
-For a cloned project, use its actual folder instead.
-
-### Step 2: Install dependencies
-
-```powershell
-npm install
+### Step 2: Install Dependencies
+```bash
+npm ci
 ```
+This installs the exact dependency versions recorded in `package-lock.json`.
 
-The project currently pins `pdf-parse` to `1.1.1` because the v2 package requires a worker that can fail under Next.js Turbopack server bundling.
+### Step 3: Create PostgreSQL Database
+```bash
+# Connect to PostgreSQL
+psql -U postgres
 
-### Step 3: Start PostgreSQL
-
-#### Option A: PostgreSQL Windows service
-
-Confirm the service:
-
-```powershell
-Get-Service | Where-Object { $_.Name -match "postgres" }
-```
-
-Start it if needed:
-
-```powershell
-Start-Service postgresql-x64-18
-```
-
-The service name may differ by installed version.
-
-#### Option B: Docker PostgreSQL
-
-```powershell
-docker run --name finresearch-postgres `
-  -e POSTGRES_USER=postgres `
-  -e POSTGRES_PASSWORD=postgres `
-  -e POSTGRES_DB=app_db `
-  -p 5432:5432 `
-  -d postgres:16
-```
-
-If the container already exists:
-
-```powershell
-docker start finresearch-postgres
-```
-
-### Step 4: Create the database
-
-With PostgreSQL credentials configured:
-
-```powershell
-psql -U postgres -h 127.0.0.1 -p 5432
-```
-
-Run:
-
-```sql
+# Create database
 CREATE DATABASE app_db;
 \q
 ```
 
-If the database already exists, continue.
-
-### Step 5: Configure `.env`
-
-Create `.env` in the project root. Never commit this file.
-
+### Step 4: Configure Environment Variables
+Create a `.env` file in the project root:
 ```env
-DATABASE_URL=postgresql://postgres:YOUR_POSTGRES_PASSWORD@127.0.0.1:5432/app_db
-NEXTAUTH_SECRET=replace-with-a-long-random-secret
+# Database
+DATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/app_db
+
+# NextAuth
+NEXTAUTH_SECRET=your-random-secret-key-at-least-32-chars
 NEXTAUTH_URL=http://localhost:3000
+
+# Optional AI configuration (local extraction/retrieval still work without a key)
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.6-flash
 GEMINI_PRO_MODEL=gemini-3.6-flash
+GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+
+# Set when you configure the scheduled recovery worker
+CRON_SECRET=
+
+# Optional; set only for deliberate production demo seeding
+SEED_SECRET=
 ```
 
-Replace `YOUR_POSTGRES_PASSWORD` with the real PostgreSQL password. If the password is `postgres`, use:
+**Optional Gemini configuration:** If you want model synthesis or embeddings, create a private key at https://aistudio.google.com/ and set it in `.env`. Never commit the key. Without it, keyword retrieval and evidence-only local fallbacks remain available.
 
-```env
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/app_db
+**How to generate NEXTAUTH_SECRET:**
+```bash
+openssl rand -base64 32
 ```
+Or use: https://generate-secret.vercel.app/32
 
-Generate a NextAuth secret in PowerShell:
-
-```powershell
-$bytes = New-Object byte[] 32
-[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-[Convert]::ToBase64String($bytes)
-```
-
-Copy the output after `NEXTAUTH_SECRET=`.
-
-A Gemini API key is optional for basic operation because the application has local fallback behavior. Full Gemini analysis requires a valid key with available quota.
-
-### Step 6: Apply the database schema
-
-Preferred command:
-
-```powershell
-npx drizzle-kit push
-```
-
-If the database is empty and `push` hangs during introspection, generate and apply a migration:
-
-```powershell
-npx drizzle-kit generate
+### Step 5: Apply the checked-in migrations
+For a new, empty database only:
+```bash
 npx drizzle-kit migrate
 ```
+If an existing database was initialized with `drizzle-kit push`, back it up and review/reconcile the pending migrations instead of replaying the initial migration blindly. Do not use automatic schema push in production.
 
-The application should have tables including `users`, `documents`, `document_chunks`, `financial_metrics`, and `risk_flags`.
-
-### Step 7: Start the application
-
-```powershell
+### Step 6: Start the Development Server
+```bash
 npm run dev
 ```
+Open http://localhost:3000 in your browser.
 
-Open:
-
-```text
-http://localhost:3000
+### Step 7: Optionally Seed Local Demo Data
+In a second terminal, use this only for a local demo database:
+```bash
+curl http://localhost:3000/api/seed
 ```
+Production `GET /api/seed` is disabled. For intentional production seeding, `POST` with `SEED_SECRET` and the matching `x-seed-secret` header is required.
 
-If port 3000 is occupied, Next.js may use 3001. Use the URL printed in the terminal.
+### Step 8: Login with a Local Demo Account
+- `demo@finresearch.ai` or `student@finresearch.ai`
+- Local-only password for both: `demo123456`
 
-Stop the server with the keyboard shortcut `Ctrl+C`. Do not type `Ctrl+C` into PowerShell as text.
-
-### Step 8: Check health
-
-In a second PowerShell terminal:
-
-```powershell
-Invoke-WebRequest http://localhost:3000/api/health
-```
-
-A healthy response includes:
-
-```json
-{
-  "status": "ok",
-  "database": "connected"
-}
-```
-
-### Step 9: Seed demo data
-
-```powershell
-Invoke-WebRequest -Uri "http://localhost:3000/api/seed" -Method GET
-```
-
-Expected response:
-
-```json
-{"success":true,"message":"Database seeded successfully"}
-```
-
-The seed creates demo users, companies, documents, metrics, risks, and a demo session.
-
-### Step 10: Sign in
-
-```text
-Email: demo@finresearch.ai
-Password: demo123456
-```
-
-The second demo user is:
-
-```text
-Email: student@finresearch.ai
-Password: demo123456
-```
-
-### Step 11: Validate the project
-
-```powershell
-npm run typecheck
-npm run lint
-npm run build
-```
-
-The `npm` output lines beginning with `>` are informational. Never type them manually.
+Change or remove these demo credentials before exposing a public deployment.
 
 ---
 
-## 7. Using the Application End to End
+## 9. DEPLOYMENT GUIDE
 
-### Workflow A: Demo dataset
+### Option A: Deploy on Vercel + Neon (Recommended)
 
-1. Sign in with the demo account.
-2. Open Dashboard.
-3. Click Load Demo Data if the database is empty.
-4. Open Companies to inspect Apple, Microsoft, Tesla, and Amazon.
-5. Open Financial Metrics to compare ratios and margins.
-6. Open Risk Analysis to filter risks.
-7. Open Benchmarking to select companies.
-8. Open Reports to generate an analysis.
-9. Open Research Agent and select the seeded session.
+Provider pricing and limits change. Confirm that your chosen plan supports the Cron frequency and serverless function duration your workload requires.
 
-### Workflow B: Upload a searchable PDF
+**Step 1: Create accounts**
+1. GitHub: https://github.com
+2. Vercel or another Next.js host
+3. Neon or another managed PostgreSQL provider
 
-1. Open Documents.
-2. Click Upload Document.
-3. Enter company name and ticker.
-4. Select document type and fiscal year.
-5. Select a research session if desired.
-6. Choose a PDF with selectable text.
-7. Wait for indexing and agent processing.
-8. Open the document detail page.
-9. Review Raw Content, Metrics, and Risks.
+Review each provider's current pricing, region, connection security, Cron, and function-duration limits.
 
-If the raw content is only a fallback message, the PDF parser could not read text. Use an OCR/searchable version of the filing.
+**Step 2: Set up a managed PostgreSQL database**
+1. Go to https://neon.tech
+2. Click "Sign Up" → use GitHub
+3. Click "New Project"
+4. Name it "finresearch-ai"
+5. Select region closest to you
+6. Click "Create Project"
+7. Copy the "Connection String" (starts with `postgresql://...`)
 
-### Workflow C: Upload DOCX or TXT
+**Step 3: Push your working branch to GitHub**
+Use the repository's existing Git clone and remote; do not run `git init` inside it. Push your feature branch with your normal Git workflow, and never commit `.env`, API keys, database credentials, or private documents.
 
-1. Use a `.docx` or `.txt` file.
-2. Complete the same metadata fields.
-3. Upload the file.
-4. Wait for processing.
-5. Review extracted content and analysis.
+**Step 4: Deploy to Vercel**
+1. Import the repository and select the intended branch.
+2. Configure Preview and Production environment variables separately:
+   - `DATABASE_URL` = private managed PostgreSQL connection string
+   - `NEXTAUTH_SECRET` = strong, unique secret
+   - `NEXTAUTH_URL` = exact public HTTPS origin
+   - `CRON_SECRET` = strong secret for the scheduled job-recovery endpoint
+   - `GEMINI_API_KEY` = optional; omit it for evidence-only fallbacks
+   - `GEMINI_MODEL`, `GEMINI_PRO_MODEL`, and `GEMINI_EMBEDDING_MODEL` = optional model configuration
+3. Deploy and verify the health endpoint, sign-in, uploads, research, and reports.
 
-### Workflow D: Ask a research question
+**Step 5: Apply database migrations and configure the worker**
+For a new, empty database, run migrations once from a trusted machine or CI job:
+```bash
+DATABASE_URL='postgresql://...managed connection...' npx drizzle-kit migrate
+```
+If the existing database was initialized using `drizzle-kit push`, do not replay the initial `0000` migration; back it up and review/reconcile only the missing migrations. `GET /api/seed` is disabled in production; deliberate seeding requires `POST` with `SEED_SECRET` and `x-seed-secret`. Configure the host's Cron service to call `/api/worker/documents` with `Authorization: Bearer $CRON_SECRET`, then test one queued/recovered job.
 
-Good questions are specific and evidence-based:
-
-- What is the revenue trend and operating margin?
-- Which company has the strongest liquidity position?
-- What risks are mentioned in the Risk Factors section?
-- Compare cash flow and debt-to-equity across two companies.
-- What evidence supports the concern about concentration risk?
-
-When Gemini quota is unavailable, Local Research Mode uses stored data and citations. It is still useful for retrieval, but it does not provide full generative reasoning.
+Deploy only after you have confirmed the migration history and worker schedule for the intended database.
 
 ---
 
-## 8. Environment Variables Reference
+### Option B: Deploy on Railway
 
-| Variable | Required | Purpose |
-|---|---:|---|
-| `DATABASE_URL` | Yes | PostgreSQL connection string. |
-| `NEXTAUTH_SECRET` | Yes | Signs and encrypts authentication session data. |
-| `NEXTAUTH_URL` | Yes | Canonical application URL. |
-| `GEMINI_API_KEY` | Optional | Enables Gemini extraction, risk, chat, benchmark, and report generation. |
-| `GEMINI_MODEL` | Optional | Default model for fast operations. |
-| `GEMINI_PRO_MODEL` | Optional | Report model setting. |
+Railway may host the app and PostgreSQL; check current pricing, networking, build, and scheduled-task support.
 
-Never place PowerShell commands inside `.env`. For example, this is wrong:
-
-```env
-GEMINI_API_KEY= $secret = ...
-```
-
-Only values belong in `.env`.
+1. Go to https://railway.app and create a project from the repository.
+2. Configure the environment variables listed above.
+3. Confirm the platform's Node.js version, PostgreSQL networking, build command, and start command support the app.
 
 ---
 
-## 9. Free Deployment: Vercel + Neon
+### Option C: Deploy on Render (Another Option)
 
-This is the recommended free deployment route for a Next.js project.
+1. Go to https://render.com and create a web service from the repository.
+2. Create or connect a managed PostgreSQL database.
+3. Configure the environment variables listed above and deploy.
+4. Confirm that the selected plan supports the required scheduled worker; otherwise configure an external scheduler.
 
-### 9.1 What you need
-
-- GitHub account.
-- Vercel account.
-- Neon account.
-- Google AI Studio key if full AI features are needed.
-
-Free tiers and limits change over time. Review current provider limits before using the deployment for real users.
-
-### 9.2 Create a Neon PostgreSQL database
-
-1. Visit `https://neon.tech`.
-2. Create an account using GitHub or email.
-3. Create a new project.
-4. Choose a region near your users.
-5. Open the project dashboard.
-6. Copy the pooled or standard PostgreSQL connection string.
-7. Keep the connection string private.
-
-A Neon URL commonly looks like:
-
-```text
-postgresql://user:password@host.neon.tech/database?sslmode=require
-```
-
-### 9.3 Prepare the repository
-
-From the project directory:
-
-```powershell
-git status
-git add .
-git commit -m "Prepare FinResearch AI deployment"
-```
-
-Create a GitHub repository, then connect and push:
-
-```powershell
-git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
-git branch -M main
-git push -u origin main
-```
-
-Do not commit `.env` or API keys.
-
-### 9.4 Create the Vercel project
-
-1. Visit `https://vercel.com`.
-2. Sign in with GitHub.
-3. Click Add New Project.
-4. Import the GitHub repository.
-5. Keep the framework as Next.js.
-6. Use the default build command unless Vercel detects otherwise.
-7. Add environment variables before deploying.
-
-### 9.5 Configure Vercel environment variables
-
-Add these variables in Vercel Project Settings, for Production, Preview, and Development as appropriate:
-
-```text
-DATABASE_URL=your Neon connection string
-NEXTAUTH_SECRET=a-new-production-secret
-NEXTAUTH_URL=https://your-app.vercel.app
-GEMINI_API_KEY=your-valid-key
-GEMINI_MODEL=gemini-3.6-flash
-GEMINI_PRO_MODEL=gemini-3.6-flash
-```
-
-Use a different `NEXTAUTH_SECRET` from local development. Do not reuse an exposed secret.
-
-### 9.6 Deploy
-
-Click Deploy. Vercel runs the Next.js build and provides a URL such as:
-
-```text
-https://finresearch-ai-yourname.vercel.app
-```
-
-Update `NEXTAUTH_URL` to the exact production URL, then redeploy if necessary.
-
-### 9.7 Apply the production schema
-
-Use the Neon connection string temporarily in a secure local environment, or set it in a separate shell session. Do not overwrite your local `.env` permanently.
-
-PowerShell example:
-
-```powershell
-$env:DATABASE_URL="YOUR_NEON_CONNECTION_STRING"
-npx drizzle-kit push
-Remove-Item Env:DATABASE_URL
-```
-
-If `drizzle-kit push` is unreliable:
-
-```powershell
-$env:DATABASE_URL="YOUR_NEON_CONNECTION_STRING"
-npx drizzle-kit generate
-npx drizzle-kit migrate
-Remove-Item Env:DATABASE_URL
-```
-
-Confirm the production schema before seeding.
-
-### 9.8 Seed production demo data
-
-After deployment and schema creation:
-
-```powershell
-Invoke-WebRequest -Uri "https://your-app.vercel.app/api/seed" -Method GET
-```
-
-Then open the production URL and sign in with the demo account. For a real deployment, change or remove demo credentials immediately.
-
-### 9.9 Verify production
-
-Check:
-
-```text
-https://your-app.vercel.app/api/health
-https://your-app.vercel.app/login
-https://your-app.vercel.app/dashboard
-```
-
-Test:
-
-- Registration.
-- Login and logout.
-- Session creation.
-- Demo data.
-- Document upload.
-- Metrics and risks.
-- Research Agent.
-- Reports.
-
-Inspect Vercel Function Logs if an API route fails.
-
-### 9.10 Vercel deployment limitations
-
-- Serverless functions have execution and memory limits.
-- Large PDF uploads may exceed platform request limits.
-- Long-running AI report generation may time out.
-- The database must be reachable from Vercel.
-- Do not store large binary files directly in PostgreSQL text columns for production scale.
-- Use object storage such as Vercel Blob, Cloudflare R2, or Supabase Storage for large files.
+For every host, back up and migrate the intended database using the migration guidance above, then schedule `GET /api/worker/documents` with `Authorization: Bearer $CRON_SECRET`. Use private environment variables, not source files, for credentials. If Gemini is enabled, review the provider's data-handling terms before uploading confidential documents.
 
 ---
 
-## 10. Other Free or Low-Cost Deployment Options
+## 10. HOW TO USE THE PLATFORM
 
-### 10.1 Render
+### Step 1: Load Local Demo Data
+In local development, sign in and click "Load Demo Data" on the Dashboard (or use the local-only GET /api/seed endpoint). The fixtures include Apple, Microsoft, Tesla, and Amazon sample documents, metrics, and risk flags. They are illustrative; review each source quote and fiscal period before relying on a value. Production GET seeding is disabled.
 
-1. Create a Render account.
-2. Create a free PostgreSQL database if available in your region.
-3. Create a Web Service from GitHub.
-4. Set build command to `npm run build`.
-5. Set start command to `npm run start`.
-6. Add the environment variables.
-7. Deploy.
-8. Apply the schema against the Render database.
-9. Seed `/api/seed`.
+### Step 2: Explore Companies
+- Go to "Companies" in the sidebar
+- View financial profiles for each pre-loaded company
+- Click "Metrics", "Risks", or "Compare" buttons
 
-Render free services may sleep when inactive, so the first request can be slow.
+### Step 3: View Financial Metrics
+- Go to "Financial Metrics"
+- Toggle between Revenue, Margins, Ratios, and Cash Flow charts
+- See the detailed comparison table at the bottom
 
-### 10.2 Railway
+### Step 4: Analyze Risks
+- Go to "Risk Analysis"
+- Filter by severity (Critical, High, Medium, Low)
+- Filter by risk type
+- Read source quotes and analyst recommendations
 
-1. Create a Railway account.
-2. Create a project from GitHub.
-3. Add PostgreSQL.
-4. Add the Next.js service.
-5. Configure environment variables.
-6. Use `npm run build` and `npm run start`.
-7. Apply the schema using the Railway database URL.
-8. Seed the application.
+### Step 5: Run Benchmarking
+- Go to "Benchmarking"
+- Select 2-8 accessible companies
+- Click "Compare Companies"
+- View side-by-side charts and comparison table
 
-Railway pricing and trial limits change, so verify current terms.
+### Step 6: Generate a Report
+- Go to "Reports"
+- Click "Generate Report"
+- Select companies to include
+- Click "Generate Report"
+- View the AI-compiled analyst-style report
 
-### 10.3 Fly.io or a small VPS
+### Step 7: Research Agent Chat
+- Go to "Research Agent"
+- Select a session
+- Ask financial questions like:
+  - "What is Apple's revenue growth compared to Microsoft?"
+  - "What are the biggest risks for Tesla?"
+  - "Which company has the best free cash flow generation?"
+- Get cited answers with source document references
 
-For a Docker-based deployment:
-
-1. Add a production Dockerfile.
-2. Build the image.
-3. Push it to a container registry.
-4. Run the container with environment variables.
-5. Use managed PostgreSQL.
-6. Configure HTTPS and backups.
-
-This gives more control but requires more operations work than Vercel.
-
----
-
-## 11. Production Security Checklist
-
-Before sharing the application publicly:
-
-- Rotate every API key exposed during development.
-- Use a unique strong `NEXTAUTH_SECRET` in production.
-- Use a production-only database.
-- Never commit `.env`.
-- Remove or protect the `/api/seed` endpoint after seeding.
-- Change or remove demo passwords.
-- Restrict database network access where possible.
-- Add rate limiting for registration, chat, upload, and AI routes.
-- Add file size and content validation.
-- Use object storage for production documents.
-- Configure database backups.
-- Monitor provider quotas and billing.
-- Review logs for personal or confidential financial documents.
-- Do not expose raw database errors to end users.
+### Step 8: Upload Your Own Documents
+- Go to "Documents"
+- Click "Upload Document"
+- Fill in company name, ticker, document type, fiscal year
+- Drag and drop a PDF, DOCX, or TXT file
+- Watch its status as durable processing jobs run sequentially; timing depends on file size and configured model calls
 
 ---
 
-## 12. Troubleshooting Guide
+## 11. TROUBLESHOOTING
 
-### `npm run dev` says port 3000 is in use
+### Gemini API key is not configured
+- Core local extraction, keyword retrieval, deterministic risk checks, benchmarks, and evidence-only report/chat fallbacks remain available
+- Add `GEMINI_API_KEY` from https://aistudio.google.com/ only if you want model analysis or semantic embeddings
+- Keep the key private and restart the app after changing `.env`
 
-Find the process:
+### Database connection error
+- Make sure PostgreSQL is running
+- Check your DATABASE_URL in .env is correct
+- Ensure the database exists: `CREATE DATABASE app_db;`
 
-```powershell
-Get-NetTCPConnection -LocalPort 3000 -State Listen
-```
+### "Session not found" in Research Agent
+- Create or select a research session first
+- Go to "Research Sessions" → "New Session"
 
-Stop the process by PID:
+### Documents stuck in "processing" status
+- Processing is sequential and durable; check document status and job errors in the database/logs
+- Confirm the `/api/worker/documents` Cron is scheduled with `Authorization: Bearer $CRON_SECRET`
+- Extraction and deterministic risk checks have local fallbacks and do not require Gemini
+- Failed jobs are retried with backoff, then marked failed/partial for manual review
 
-```powershell
-taskkill /PID YOUR_PID /F
-```
-
-Start again:
-
-```powershell
-npm run dev
-```
-
-### `>` is not recognized in PowerShell
-
-Do not type npm output lines. Run only:
-
-```powershell
-npm run typecheck
-```
-
-### PostgreSQL password authentication failed
-
-Your `DATABASE_URL` password does not match PostgreSQL. Reset it in pgAdmin or SQL Shell:
-
-```sql
-ALTER USER postgres WITH PASSWORD 'new-password';
-```
-
-Update `.env`, then rerun the database command.
-
-### `users` table does not exist
-
-Apply the schema:
-
-```powershell
-npx drizzle-kit push
-```
-
-Then seed:
-
-```powershell
-Invoke-WebRequest http://localhost:3000/api/seed -Method GET
-```
-
-### Seed returns HTTP 500
-
-Check:
-
-1. PostgreSQL is running.
-2. `DATABASE_URL` is correct.
-3. The schema exists.
-4. The development server was restarted after `.env` changes.
-5. The terminal running Next.js contains the underlying error.
-
-### `value too long for type character varying(50)` during upload
-
-The application stores the short extension (`pdf`, `docx`, or `txt`) in `file_type`. Restart the server after pulling the fix and upload again.
-
-### PDF contains only fallback text
-
-The PDF parser could not extract text. Use a PDF with selectable text. Scanned documents need OCR. Delete the failed record and upload the searchable version again.
-
-### PDF parser tries to open `test/data/05-versions-space.pdf`
-
-This indicates the old parser wrapper or stale Next.js process is running. Ensure `pdf-parse` is `1.1.1`, restart Next.js, and upload again.
-
-### Metrics or risks are empty
-
-Possible causes:
-
-- Gemini quota is exhausted.
-- The document contains no readable text.
-- The document contains labels that do not match local fallback patterns.
-- The upload was processed by an old server.
-
-Inspect agent logs and re-upload after restarting the server. A valid Gemini key with available quota provides the best results.
-
-### Gemini returns 429
-
-This means the project or API key exceeded quota. Wait for quota reset, use a key with available quota, enable billing according to Google terms, or use the local fallback mode.
-
-### Gemini returns 503
-
-The provider is temporarily overloaded. The application retries transient failures. If the outage continues, local fallback behavior should keep documents and chat usable.
-
-### Research Agent shows a raw provider error
-
-Restart the server so the fallback version of `researchAgent.ts` is loaded. The fallback should return Local Research Mode with stored evidence.
-
-### Production deployment fails at build
-
-Run locally:
-
-```powershell
-npm run typecheck
-npm run lint
-npm run build
-```
-
-Fix build errors before deploying. Check Vercel logs for environment and module resolution errors.
+### Build errors
+Run `npm run typecheck` to find TypeScript errors
+Run `npm run lint` to find ESLint issues
 
 ---
 
-## 13. API Examples
+## FINANCIAL TERMS GLOSSARY
 
-### Health check
-
-```powershell
-Invoke-WebRequest http://localhost:3000/api/health
-```
-
-### Seed data
-
-```powershell
-Invoke-WebRequest http://localhost:3000/api/seed -Method GET
-```
-
-### Register a user
-
-```powershell
-$body = @{ name = "Demo Analyst"; email = "analyst@example.com"; password = "password123" } | ConvertTo-Json
-Invoke-WebRequest http://localhost:3000/api/auth/register -Method POST -ContentType "application/json" -Body $body
-```
-
-### API authentication note
-
-Protected endpoints use the NextAuth browser session cookie. For scripts, first authenticate through the application or use an approved integration test setup. Do not disable authentication just to simplify local testing.
+| Term | Definition |
+|------|-----------|
+| Revenue | Total money earned from selling products/services |
+| Gross Profit | Revenue minus Cost of Goods Sold |
+| Gross Margin | Gross Profit / Revenue × 100 |
+| EBITDA | Earnings Before Interest, Taxes, Depreciation, Amortization |
+| Operating Income | EBITDA minus D&A |
+| Net Income | Final profit after all expenses and taxes |
+| EPS | Earnings Per Share — net income divided by shares outstanding |
+| Current Ratio | Current Assets / Current Liabilities (liquidity measure) |
+| D/E Ratio | Total Debt / Shareholders Equity (leverage measure) |
+| ROE | Net Income / Shareholders Equity (profitability measure) |
+| ROA | Net Income / Total Assets |
+| Free Cash Flow | Operating Cash Flow minus Capital Expenditures |
+| 10-K | Annual report filed with SEC by public companies |
+| 10-Q | Quarterly report filed with SEC |
 
 ---
 
-## 14. Database Reference
-
-### users
-Credential accounts, display names, roles, and timestamps.
-
-### research_sessions
-User-owned research workspaces with status, tags, and timestamps.
-
-### companies
-Company name, ticker, sector, industry, and description.
-
-### documents
-Original file metadata, extracted content, status, chunk count, owner, company, and fiscal year.
-
-### document_chunks
-Searchable text segments with chunk index, section, and estimated page number.
-
-### financial_metrics
-Structured financial values connected to documents and companies.
-
-### risk_flags
-Risk classification, severity, evidence, and recommendation.
-
-### analysis_reports
-Generated reports and report state.
-
-### chat_messages
-Conversation messages, agent type, citations, and reasoning.
-
-### agent_logs
-Agent activity, status, details, duration, and timestamps.
-
----
-
-## 15. Financial Glossary
-
-| Term | Meaning |
-|---|---|
-| Revenue | Money earned from products or services. |
-| Gross profit | Revenue minus cost of goods sold. |
-| Gross margin | Gross profit divided by revenue. |
-| Operating income | Profit from normal operations before interest and taxes. |
-| Operating margin | Operating income divided by revenue. |
-| Net income | Profit after all expenses and taxes. |
-| Net margin | Net income divided by revenue. |
-| EBITDA | Earnings before interest, taxes, depreciation, and amortization. |
-| EPS | Earnings per share. |
-| Current ratio | Current assets divided by current liabilities. |
-| Debt-to-equity | Debt divided by shareholders' equity. |
-| ROE | Net income divided by shareholders' equity. |
-| ROA | Net income divided by total assets. |
-| Operating cash flow | Cash generated by normal operations. |
-| Capital expenditures | Cash spent on long-term assets. |
-| Free cash flow | Operating cash flow minus capital expenditures. |
-| 10-K | Annual SEC filing by a public company. |
-| 10-Q | Quarterly SEC filing by a public company. |
-| Risk flag | A structured warning or concern found in a document. |
-
----
-
-## 16. Recommended Demo Presentation Flow
-
-For a project demonstration:
-
-1. Start PostgreSQL.
-2. Start the Next.js app.
-3. Open `/api/health` to prove database connectivity.
-4. Sign in with the demo account.
-5. Show the dashboard and seeded companies.
-6. Open a company and explain metrics.
-7. Open Risk Analysis and explain evidence.
-8. Open Benchmarking and compare two companies.
-9. Open Reports and show report generation.
-10. Open Research Agent and ask a cited question.
-11. Upload a searchable PDF and show the processing pipeline.
-12. Explain Gemini fallback behavior and quota limitations.
-
----
-
-## 17. Final Verification Checklist
-
-Before handing the project to another person:
-
-- [ ] PostgreSQL is running.
-- [ ] `.env` exists locally and is not committed.
-- [ ] `DATABASE_URL` points to the intended database.
-- [ ] `NEXTAUTH_SECRET` is long and private.
-- [ ] `NEXTAUTH_URL` matches the current URL.
-- [ ] Gemini key is valid or fallback mode is understood.
-- [ ] Schema is applied.
-- [ ] Demo data is seeded.
-- [ ] Login works.
-- [ ] Registration works.
-- [ ] Health endpoint returns database connected.
-- [ ] Document upload works.
-- [ ] Searchable PDF text is visible.
-- [ ] DOCX text is visible.
-- [ ] Metrics and risks are present or fallback status is understood.
-- [ ] Research Agent returns an answer.
-- [ ] `npm run typecheck` passes.
-- [ ] `npm run lint` passes.
-- [ ] `npm run build` passes.
-- [ ] Production secrets are separate from local secrets.
-- [ ] Production database is backed up.
-
----
-
-## 18. Project Summary
-
-FinResearch AI combines Next.js, PostgreSQL, Drizzle ORM, NextAuth, document parsing, Gemini analysis, structured financial data, and evidence-based research workflows in one application.
-
-The safest operational model is:
-
-1. Make document text extraction reliable.
-2. Store and index source evidence.
-3. Treat AI enrichment as an optional layer.
-4. Preserve usable local fallback behavior when provider quotas or availability change.
-5. Validate every important financial value against the original document.
-6. Keep all production secrets private and rotate exposed keys.
-
-**End of documentation.**
+*FinResearch AI — Multi-Agent Financial Analysis System*
+*Built with Next.js, Drizzle ORM, PostgreSQL, and Google Gemini AI*

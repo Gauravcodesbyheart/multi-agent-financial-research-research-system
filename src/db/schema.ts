@@ -9,6 +9,7 @@ import {
   boolean,
   jsonb,
   serial,
+  index,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -64,6 +65,7 @@ export const documents = pgTable("documents", {
   chunkCount: integer("chunk_count").default(0),
   isSeeded: boolean("is_seeded").default(false),
   processingStatus: varchar("processing_status", { length: 50 }).default("pending").notNull(),
+  embeddingStatus: varchar("embedding_status", { length: 50 }).default("pending").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -76,8 +78,26 @@ export const documentChunks = pgTable("document_chunks", {
   content: text("content").notNull(),
   pageNumber: integer("page_number"),
   section: varchar("section", { length: 255 }),
+  embedding: jsonb("embedding").$type<number[]>(),
+  embeddingModel: varchar("embedding_model", { length: 100 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// ─── Durable document-processing queue ────────────────────────────────────────
+export const documentProcessingJobs = pgTable("document_processing_jobs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  documentId: uuid("document_id").references(() => documents.id, { onDelete: "cascade" }).notNull().unique(),
+  status: varchar("status", { length: 50 }).default("queued").notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  maxAttempts: integer("max_attempts").default(3).notNull(),
+  nextAttemptAt: timestamp("next_attempt_at").defaultNow().notNull(),
+  lockedAt: timestamp("locked_at"),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("document_processing_jobs_status_next_attempt_idx").on(table.status, table.nextAttemptAt),
+]);
 
 // ─── Financial Metrics ────────────────────────────────────────────────────────
 export const financialMetrics = pgTable("financial_metrics", {
@@ -224,8 +244,13 @@ export const documentsRelations = relations(documents, ({ one, many }) => ({
   company: one(companies, { fields: [documents.companyId], references: [companies.id] }),
   user: one(users, { fields: [documents.userId], references: [users.id] }),
   chunks: many(documentChunks),
+  processingJob: one(documentProcessingJobs),
   metrics: many(financialMetrics),
   risks: many(riskFlags),
+}));
+
+export const documentProcessingJobsRelations = relations(documentProcessingJobs, ({ one }) => ({
+  document: one(documents, { fields: [documentProcessingJobs.documentId], references: [documents.id] }),
 }));
 
 export type User = typeof users.$inferSelect;

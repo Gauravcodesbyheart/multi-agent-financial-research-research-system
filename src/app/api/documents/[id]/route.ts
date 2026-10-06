@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
-import { documents, financialMetrics, riskFlags, documentChunks } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { documents, financialMetrics, riskFlags, documentChunks, agentLogs } from "@/db/schema";
+import { eq, and, desc } from "drizzle-orm";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
@@ -21,11 +21,29 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const metrics = await db.select().from(financialMetrics).where(eq(financialMetrics.documentId, id));
   const risks = await db.select().from(riskFlags).where(eq(riskFlags.documentId, id));
   const chunks = await db
-    .select({ chunkIndex: documentChunks.chunkIndex, section: documentChunks.section })
+    .select({
+      chunkIndex: documentChunks.chunkIndex,
+      section: documentChunks.section,
+      pageNumber: documentChunks.pageNumber,
+      embeddingModel: documentChunks.embeddingModel,
+    })
     .from(documentChunks)
     .where(eq(documentChunks.documentId, id));
+  const embeddingCount = chunks.filter((chunk) => Boolean(chunk.embeddingModel)).length;
+  const activity = await db.select({
+    agentName: agentLogs.agentName,
+    action: agentLogs.action,
+    status: agentLogs.status,
+    details: agentLogs.details,
+    createdAt: agentLogs.createdAt,
+    duration: agentLogs.duration,
+  })
+    .from(agentLogs)
+    .where(eq(agentLogs.documentId, id))
+    .orderBy(desc(agentLogs.createdAt))
+    .limit(60);
 
-  return NextResponse.json({ document: doc, metrics, risks, chunks });
+  return NextResponse.json({ document: doc, metrics, risks, chunks, embeddingCount, activity });
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
