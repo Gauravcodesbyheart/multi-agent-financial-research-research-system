@@ -1,12 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
-import { documents, companies, financialMetrics, riskFlags, researchSessions } from "@/db/schema";
+import { documents, companies, researchSessions, documentProcessingJobs } from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
-import { processDocument } from "@/lib/agents/documentAgent";
-import { extractFinancialMetrics } from "@/lib/agents/extractionAgent";
-import { scanForRisks } from "@/lib/agents/riskAgent";
+import { processDocumentJob } from "@/lib/agents/orchestrator";
+
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -58,6 +58,9 @@ export async function POST(req: NextRequest) {
     const ticker = typeof tickerValue === "string" ? tickerValue.trim() : "";
 
     if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    if (file.size <= 0 || file.size > 10 * 1024 * 1024) {
+      return NextResponse.json({ error: "File must be non-empty and no larger than 10 MB." }, { status: 413 });
+    }
 
     if (sessionId) {
       const [ownedSession] = await db
@@ -76,40 +79,39 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
     const fileName = file.name.toLowerCase();
     const fileExtension = fileName.includes(".") ? fileName.split(".").pop() || "unknown" : "unknown";
-    const storedFileType = fileExtension === "pdf" || fileExtension === "docx" || fileExtension === "txt"
-      ? fileExtension
-      : "unknown";
+    if (!["pdf", "docx", "txt"].includes(fileExtension)) {
+      return NextResponse.json({ error: "Only PDF, DOCX, and TXT files are supported." }, { status: 415 });
+    }
+    const storedFileType = fileExtension;
     let content = "";
 
-    if (file.type === "application/pdf" || fileName.endsWith(".pdf")) {
-      // For PDF, try to extract text
+    if (fileExtension === "pdf") {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        // Load the runtime parser directly; the package wrapper runs its test fixture
-        // when bundled by some Next.js server runtimes.
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        // Load the runtime parser directly; the package wrapper can run its test fixture in server bundles.
         const pdfParse = require("pdf-parse/lib/pdf-parse.js");
         const data = await pdfParse(buffer);
         content = data.text.trim();
-
         if (!content) {
-          throw new Error("This PDF contains no selectable text. It may be scanned or image-only.");
+          return NextResponse.json({ error: "This PDF contains no selectable text. OCR the scanned PDF and upload it again." }, { status: 422 });
         }
       } catch (error) {
         console.error(`PDF text extraction failed for ${file.name}:`, error);
-        content = `[PDF Document: ${file.name}]\n\nText extraction failed. This PDF may be scanned or image-only; upload a searchable PDF to enable financial analysis.\n\nFile size: ${buffer.length} bytes`;
+        return NextResponse.json({ error: "Could not extract text from this PDF. Upload a searchable PDF or an OCR-processed copy." }, { status: 422 });
       }
-    } else if (fileName.endsWith(".docx")) {
+    } else if (fileExtension === "docx") {
       try {
         const mammoth = await import("mammoth");
         const result = await mammoth.extractRawText({ buffer });
-        content = result.value;
-      } catch {
-        content = buffer.toString("utf-8");
+        content = result.value.trim();
+      } catch (error) {
+        console.error(`DOCX text extraction failed for ${file.name}:`, error);
+        return NextResponse.json({ error: "Could not extract text from this DOCX file." }, { status: 422 });
       }
     } else {
-      content = buffer.toString("utf-8");
+      content = buffer.toString("utf-8").trim();
     }
+
+    if (!content) return NextResponse.json({ error: "The uploaded document is empty." }, { status: 422 });
 
     // PostgreSQL text fields cannot contain NUL bytes. Some generated PDFs include
     // citation markers containing \x00, so remove only that invalid character.
@@ -137,54 +139,37 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Create document
-    const [doc] = await db
-      .insert(documents)
-      .values({
-        sessionId,
-        companyId,
-        userId: session.user.id,
-        fileName: file.name,
-        fileType: storedFileType,
-        fileSize: file.size,
-        documentType,
-        fiscalYear,
-        content,
-        processingStatus: "processing",
-      })
-      .returning();
+    // Persist the document and its durable queue record atomically before responding.
+    const { doc, job } = await db.transaction(async (tx) => {
+      const [createdDocument] = await tx.insert(documents)
+        .values({
+          sessionId,
+          companyId,
+          userId: session.user.id,
+          fileName: file.name,
+          fileType: storedFileType,
+          fileSize: file.size,
+          documentType,
+          fiscalYear,
+          content,
+          processingStatus: "processing",
+          embeddingStatus: "pending",
+        })
+        .returning();
+      const [createdJob] = await tx.insert(documentProcessingJobs)
+        .values({ documentId: createdDocument.id })
+        .returning();
+      return { doc: createdDocument, job: createdJob };
+    });
 
-    // Run multi-agent pipeline asynchronously
-    (async () => {
+    // Start immediately; the persisted queued job can also be recovered by the scheduled worker.
+    after(async () => {
       try {
-        // Agent 1: Document Agent — chunk and index
-        await processDocument(doc.id, content);
-
-        // Local fallbacks keep uploaded documents analyzable without Gemini.
-        try {
-          await extractFinancialMetrics(doc.id, content, companyId || undefined);
-        } catch (error) {
-          console.warn("Extraction Agent failed; document remains indexed:", error);
-        }
-
-        try {
-          await scanForRisks(doc.id, content, companyId || undefined);
-        } catch (error) {
-          console.warn("Risk Agent failed; document remains indexed:", error);
-        }
-
-        await db
-          .update(documents)
-          .set({ processingStatus: "completed", updatedAt: new Date() })
-          .where(eq(documents.id, doc.id));
-      } catch (e) {
-        console.error("Pipeline error:", e);
-        await db
-          .update(documents)
-          .set({ processingStatus: "failed", updatedAt: new Date() })
-          .where(eq(documents.id, doc.id));
+        await processDocumentJob(job.id);
+      } catch (error) {
+        console.error(`Document job ${job.id} failed before it could update its status:`, error);
       }
-    })();
+    });
 
     return NextResponse.json({ document: doc }, { status: 201 });
   } catch (error) {

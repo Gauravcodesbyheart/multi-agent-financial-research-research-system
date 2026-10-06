@@ -28,15 +28,17 @@ The document processing pipeline extracts readable text, cleans and normalizes i
 
 ### 🤖 Multi-Agent AI Pipeline
 
-FinResearch AI uses five specialized agents:
+FinResearch AI coordinates the following agents in a sequential document-processing pipeline, with research and report agents invoked by the user:
 
-| Agent                | Responsibility                                            |
-| -------------------- | --------------------------------------------------------- |
-| **Document Agent**   | Extracts, cleans, sections, chunks, and indexes documents |
-| **Extraction Agent** | Extracts structured financial metrics                     |
-| **Risk Agent**       | Identifies financial and business risks                   |
-| **Benchmark Agent**  | Compares companies using metrics and risk profiles        |
-| **Research Agent**   | Answers questions using retrieved evidence and citations  |
+| Agent | Responsibility |
+| --- | --- |
+| **Document Agent** | Cleans, sections, chunks, and indexes text; never invents page numbers. |
+| **Extraction Agent** | Extracts financial metrics, validates model values against exact source quotes, and fills supported fields with a local parser. |
+| **Red Flag Agent** | Detects quote-backed disclosure signals, unusual financial values, rising debt, and falling margins; validates any model-added finding against exact source text. |
+| **Embedding Agent** | Optionally creates semantic vectors for chunks; keyword retrieval remains available when embeddings are not configured. |
+| **Benchmark Agent** | Compares the latest available company metrics and risk profiles with source document and fiscal-period context. |
+| **Research Agent** | Decomposes compound questions, retrieves evidence, and returns inline, source-linked citations. |
+| **Report Agent** | Produces an Executive Summary and deterministic Key Financials table, then adds detailed analysis and source-backed risk context when Gemini is available. |
 
 ### 📊 Financial Metrics
 
@@ -70,18 +72,7 @@ The platform works with metrics such as:
 
 ### ⚠️ Risk Analysis
 
-The Risk Agent analyzes documents for risks including:
-
-* Liquidity Risk
-* Debt Risk
-* Regulatory Risk
-* Market Risk
-* Concentration Risk
-* Operational Risk
-* Revenue Risk
-* Margin Risk
-* Competition Risk
-* Going Concern Risk
+The Red Flag Agent combines local, evidence-matched rules with optional Gemini analysis. It checks for auditor qualifications and going-concern language, accounting and balance-sheet anomalies, and cross-period movements such as debt increases and margin deterioration. A model-generated finding is kept only when its quoted source text is present and any numeric claims match the quote. Deterministic trend and anomaly checks require source lines whose values reconcile to the stored metrics; cross-period checks need matching evidence from both periods. Arithmetic inconsistencies are review flags, not definitive accusations. This is a screening aid, not an audit opinion.
 
 Risk records can contain:
 
@@ -97,25 +88,23 @@ Risk records can contain:
 
 Compare companies across:
 
-* Financial metrics
-* Margins
-* Ratios
-* Cash flow
-* Debt
-* Risk indicators
+* Latest stored financial metrics, with fiscal period and source document shown
+* Margins, ratios, cash flow, and debt
+* Risk indicators backed by selected documents
 
-The system presents structured comparisons to support financial research and analysis.
+Results are scoped to the signed-in user's documents plus the built-in demo dataset. If fiscal periods differ, the UI exposes the mismatch rather than presenting it as a like-for-like comparison.
 
 ### 📑 AI-Generated Reports
 
 Generate structured reports containing:
 
 * Executive Summary
-* Key Findings
-* Metric Comparisons
-* Risk Summary
-* Recommendations
-* Full Report Content
+* A deterministic Key Financials table (revenue, growth, margins, net income, debt, current ratio, free cash flow, fiscal period, and source document)
+* Key Findings and stored metric-comparison rows
+* Source-backed risk summary and recommendations
+* Full report content
+
+The Key Financials table is populated from the latest stored metrics even when Gemini is unavailable or omits the requested table.
 
 ### 💬 Research Agent
 
@@ -135,21 +124,11 @@ Compare cash flow and debt-to-equity across two companies.
 What evidence supports the concentration risk?
 ```
 
-The Research Agent retrieves relevant document chunks, stored financial metrics, risk information, and source evidence before generating a response.
+The Research Agent decomposes compound questions into retrieval steps and searches the active session's documents. Every chat history read, message write, and research retrieval checks that the signed-in user owns the requested session; document and message queries are scoped to that user as well. It uses Gemini semantic embeddings when every chunk in the collection has a compatible vector; otherwise it falls back to local keyword ranking. Model output is structured as individual claims; before display, every claim must use a retrieved source ID, include an exact quote found in that cited excerpt, and preserve numeric values, currencies, scales, and percentage units from the quote. Invalid claims are omitted, and a transparent evidence-only excerpt summary is used if generation or validation fails; when the research pipeline itself fails, the API returns an error rather than fabricating a chat answer. This deterministic source check improves auditability but does not prove that every paraphrase is semantically entailed; verify consequential conclusions in the original filing.
 
 ### 🔄 Local Fallback Mode
 
-Gemini is the preferred AI provider, but the application includes fallback behavior for supported workflows.
-
-When AI services or quota are unavailable, the system can continue providing stored:
-
-* Financial metrics
-* Risk indicators
-* Relevant document excerpts
-* Document citations
-* Local research results
-
-This helps keep core document indexing and retrieval useful even when the external AI provider is unavailable.
+Gemini enriches the workflow but is not required for core evidence processing. Without a valid API key, the upload pipeline still chunks documents, runs local metric extraction and deterministic red-flag rules, and stores results. Query retrieval uses keywords instead of embeddings; research returns matching excerpts without unsupported conclusions; benchmark and report screens can use stored data and deterministic fallbacks. A configured key enables model extraction, risk review, semantic embeddings, and fuller narrative analysis. Embedding failures are recorded separately and do not disable keyword search.
 
 ---
 
@@ -210,50 +189,44 @@ This helps keep core document indexing and retrieval useful even when the extern
 # 🔄 Multi-Agent Processing Pipeline
 
 ```text
-                 Financial Document
-                         │
-                         ▼
-                ┌─────────────────┐
-                │ Document Agent  │
-                │ Extract / Clean │
-                │ Section / Chunk │
-                └────────┬────────┘
-                         │
-             ┌───────────┴───────────┐
-             │                       │
-             ▼                       ▼
-    ┌─────────────────┐     ┌─────────────────┐
-    │Extraction Agent │     │    Risk Agent   │
-    │ Financial Data  │     │ Risk Detection  │
-    └────────┬────────┘     └────────┬────────┘
-             │                       │
-             └───────────┬───────────┘
-                         │
-                         ▼
-                ┌─────────────────┐
-                │Benchmark Agent │
-                │Company Analysis │
-                └────────┬────────┘
-                         │
-                         ▼
-                ┌─────────────────┐
-                │ Research Agent │
-                │ Q&A + Evidence │
-                │ + Citations    │
-                └─────────────────┘
+Upload document + durable PostgreSQL job (atomic transaction)
+      │
+      ▼
+Immediate `after()` trigger; scheduled worker recovers queued/stale jobs
+      │
+      ▼
+Document Agent: parse text → clean → chunk → persist source evidence
+      │
+      ▼
+Extraction Agent: local extraction + optional Gemini quote validation
+      │
+      ▼
+Red Flag Agent: deterministic checks + optional quote-validated Gemini findings
+      │
+      ▼
+Embedding Agent: optional Gemini vectors (keyword search remains available)
+      │
+      └──► document status: completed / partial / failed
+
+Research UI: decompose question → retrieve session chunks → cite source excerpts
+Benchmark UI: compare accessible companies and period-tagged latest metrics
+Report Agent: Executive Summary + deterministic Key Financials + analysis
 ```
 
 ### Document Agent
 
 Responsible for:
 
-1. Receiving PDF, DOCX, or TXT files
-2. Extracting text
+1. Receiving PDF, DOCX, or TXT files (up to 10 MB)
+2. Extracting text and rejecting empty or non-searchable PDFs with a clear error
 3. Cleaning and normalizing content
-4. Splitting content into searchable chunks
-5. Detecting document sections
-6. Storing chunks in PostgreSQL
-7. Updating document processing status
+4. Splitting content into overlapping, searchable chunks
+5. Detecting document sections and storing chunks in PostgreSQL
+6. Marking the document indexed before downstream processing
+
+The upload route writes the document and a durable PostgreSQL job record in one transaction, then uses Next.js `after()` to start the job immediately. The orchestrator awaits Document → Extraction → Red Flag → Embedding in order. A conditional database update prevents two workers claiming the same job; transient failures get up to three total attempts with backoff, and abandoned `processing` locks can be reclaimed. The scheduled `/api/worker/documents` endpoint drains queued/stale jobs (configured once per minute in `vercel.json` and protected by `CRON_SECRET`). Extraction and red-flag errors are isolated so later stages still run; the final document is marked `completed`, `partial`, or `failed`, with per-agent/retry logs. Embedding is optional and its failure does not block keyword retrieval. The PostgreSQL queue survives web-process restarts; a scheduler/worker and the host's function-duration limits still need configuring for production.
+
+The current PDF/DOCX parsers do not preserve reliable page boundaries. The application therefore avoids inventing page numbers; source citations identify the document, section, and chunk.
 
 ### Extraction Agent
 
@@ -333,13 +306,15 @@ The system is designed to ground responses in retrieved document evidence; impor
 * **PostgreSQL**
 * **Drizzle ORM**
 
+Semantic vectors are currently stored as JSONB arrays with their model name. Similarity ranking runs in application memory and automatically falls back to keyword ranking when vectors are missing or incompatible. This avoids requiring PostgreSQL extensions for local use, but is intended for small-to-medium collections; use pgvector with an index such as HNSW for larger corpora.
+
 ## Deployment
 
 * **Vercel**
 * **Neon PostgreSQL**
 * Google AI Studio / Gemini API
 
-The documented architecture uses Next.js, React, PostgreSQL, Drizzle ORM, NextAuth, document parsing, and Gemini-based analysis.
+This application uses Next.js, React, PostgreSQL, Drizzle ORM, NextAuth, document parsing, and optional Gemini-based analysis.
 
 ---
 
@@ -362,7 +337,8 @@ finresearch-ai/
 │   │   │   ├── reports/
 │   │   │   ├── risks/
 │   │   │   ├── seed/
-│   │   │   └── sessions/
+│   │   │   ├── sessions/
+│   │   │   └── worker/documents/
 │   │   │
 │   │   ├── dashboard/
 │   │   │   ├── benchmark/
@@ -383,19 +359,22 @@ finresearch-ai/
 │   │
 │   └── lib/
 │       ├── agents/
+│       │   ├── orchestrator.ts
 │       │   ├── documentAgent.ts
 │       │   ├── extractionAgent.ts
 │       │   ├── riskAgent.ts
+│       │   ├── embeddingAgent.ts
 │       │   ├── benchmarkAgent.ts
-│       │   └── researchAgent.ts
+│       │   ├── researchAgent.ts
+│       │   └── reportAgent.ts
 │       │
 │       ├── auth.ts
 │       ├── seed.ts
 │       └── seedData.ts
 │
-├── public/
-│
-├── drizzle.config.json
+├── drizzle/                 # Versioned SQL migrations
+├── drizzle.config.ts        # Uses DATABASE_URL
+├── vercel.json              # Schedules durable-job recovery worker
 ├── package.json
 ├── package-lock.json
 ├── .env.example
@@ -417,11 +396,13 @@ FinResearch AI uses PostgreSQL with Drizzle ORM.
 | `research_sessions` | User research workspaces                         |
 | `companies`         | Company information                              |
 | `documents`         | Uploaded document metadata and extracted content |
-| `document_chunks`   | Searchable document sections                     |
+| `document_chunks`   | Searchable document sections and optional embeddings |
+| `document_processing_jobs` | Durable, retryable upload-pipeline jobs       |
 | `financial_metrics` | Structured financial metrics                     |
 | `risk_flags`        | Risk classifications and evidence                |
 | `analysis_reports`  | Generated financial reports                      |
 | `chat_messages`     | Research Agent conversations                     |
+| `benchmark_comparisons` | Comparison metadata for research sessions    |
 | `agent_logs`        | Agent activity and processing logs               |
 
 ---
@@ -456,6 +437,7 @@ FinResearch AI uses PostgreSQL with Drizzle ORM.
 | `/api/seed`               | Seed demo data                 |
 | `/api/sessions`           | Research sessions              |
 | `/api/documents`          | Document upload and management |
+| `/api/worker/documents`   | Authenticated durable-job recovery worker |
 | `/api/companies`          | Company data                   |
 | `/api/metrics`            | Financial metrics              |
 | `/api/risks`              | Risk information               |
@@ -483,22 +465,26 @@ Optional:
 * Google AI Studio / Gemini API key
 * OCR software for scanned PDFs
 
-The project documentation recommends Node.js 20.9 or newer for Next.js 16 and PostgreSQL 14 or newer.
+Use Node.js 20.9 or newer for Next.js 16, plus PostgreSQL 14 or newer.
 
 ---
 
 ## 1. Clone the Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/finresearch-ai.git
-cd finresearch-ai
+git clone --branch arena/01a101ca-multi-agent-financial-research https://github.com/Gauravcodesbyheart/multi-agent-financial-research-research-system.git
+cd multi-agent-financial-research-research-system
 ```
+
+If the changes have already been merged to the repository's default branch, omit `--branch arena/01a101ca-multi-agent-financial-research`.
 
 ## 2. Install Dependencies
 
 ```bash
-npm install
+npm ci
 ```
+
+`npm ci` installs the exact dependency versions recorded in `package-lock.json`.
 
 ## 3. Create PostgreSQL Database
 
@@ -508,40 +494,59 @@ CREATE DATABASE app_db;
 
 ## 4. Configure Environment Variables
 
-Create a `.env` file in the project root:
+Copy `.env.example` to `.env` in the project root, then set the values:
+
+```bash
+cp .env.example .env
+```
+
+PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Set at least:
 
 ```env
 DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@127.0.0.1:5432/app_db
-
-NEXTAUTH_SECRET=your-long-random-secret
-
+NEXTAUTH_SECRET=replace-with-a-long-random-secret
 NEXTAUTH_URL=http://localhost:3000
-
-GEMINI_API_KEY=your-gemini-api-key
-
-GEMINI_MODEL=gemini-3.6-flash
-
-GEMINI_PRO_MODEL=gemini-3.6-flash
 ```
 
-For the complete list and explanations of environment variables, see the project documentation.
+Optional AI configuration (omit `GEMINI_API_KEY` to use evidence-only local fallbacks):
+
+```env
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_MODEL=gemini-3.6-flash
+GEMINI_PRO_MODEL=gemini-3.6-flash
+GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+```
+
+`CRON_SECRET` is needed to protect the scheduled recovery worker in production; local uploads still start immediately through `after()`. `SEED_SECRET` is optional locally and is required only if you deliberately invoke the demo seeder in production. Generate a local auth secret with `openssl rand -base64 32` (or a password manager); use distinct secrets for production.
 
 > **Never commit `.env` to GitHub.**
 
 ---
 
-## 5. Apply Database Schema
+## 5. Apply Database Migrations
+
+For a **new, empty database**, apply the checked-in migrations:
 
 ```bash
-npx drizzle-kit push
-```
-
-If migrations are required:
-
-```bash
-npx drizzle-kit generate
 npx drizzle-kit migrate
 ```
+
+`drizzle.config.ts` reads `DATABASE_URL` from the environment (and loads local `.env`), so the same command targets the configured local or production database. Back up any existing database first. If you previously initialized an existing database with `drizzle-kit push`, do not replay the initial `0000` migration against it; inspect the schema and apply only the missing changes from `drizzle/0001_embeddings_and_pipeline_status.sql` and `drizzle/0002_durable_document_jobs.sql` (or safely reconcile the Drizzle migration history) before deploying.
+
+When you change `src/db/schema.ts` during development, create a new migration and review the generated SQL before applying it:
+
+```bash
+npx drizzle-kit generate --name=describe-your-change
+npx drizzle-kit migrate
+```
+
+Do not use an automatic schema push against production.
 
 ---
 
@@ -580,40 +585,64 @@ Expected healthy response:
 
 ## 8. Seed Demo Data
 
-After starting the application:
+In **local development only**, start the app and visit `http://localhost:3000/api/seed` or run:
+
+```bash
+curl http://localhost:3000/api/seed
+```
+
+PowerShell:
 
 ```powershell
 Invoke-WebRequest http://localhost:3000/api/seed -Method GET
 ```
 
-The demo dataset contains companies including:
+The built-in demo users are `demo@finresearch.ai` and `student@finresearch.ai`, both with the local-only password `demo123456`. Change or remove these accounts before any public demo. The dataset includes Apple, Microsoft, Tesla, and Amazon; fixture metrics are illustrative and should be checked against their cited source text.
 
-* Apple
-* Microsoft
-* Tesla
-* Amazon
+In production, `GET /api/seed` is disabled; the `POST` route requires `SEED_SECRET` and an `x-seed-secret` header. Do not seed a real production workspace unless you explicitly need a controlled demo dataset.
 
 ---
 
+## Making Changes on Your Local Machine
+
+1. Clone the repository and branch shown above (or fetch it in an existing clone):
+
+   ```bash
+   git fetch origin
+   git checkout arena/01a101ca-multi-agent-financial-research
+   git pull --ff-only origin arena/01a101ca-multi-agent-financial-research
+   ```
+
+2. Install dependencies with `npm ci`, create `.env` from `.env.example`, point `DATABASE_URL` to your local PostgreSQL database, and apply migrations.
+3. Start development mode with `npm run dev`. The dashboard refreshes automatically as you edit files.
+4. Common code locations:
+   * `src/lib/agents/` — extraction, red-flag, embedding, retrieval, benchmarking, and report logic
+   * `src/app/dashboard/` — user-facing pages
+   * `src/app/api/` — authenticated route handlers
+   * `src/db/schema.ts` and `drizzle/` — schema and versioned migrations
+5. Before sharing a change, run `npm test`, `npm run typecheck`, `npm run lint`, and `npm run build`. For database changes, generate and review a new SQL migration and test it on a disposable database first.
+6. Commit and push your work to a Git branch. In an existing clone:
+
+   ```bash
+   git add .
+   git commit -m "Describe the change"
+   git push origin arena/01a101ca-multi-agent-financial-research
+   ```
+
+   If you use a different branch in your own fork, replace the branch name in the commands. Never commit `.env` or confidential financial files.
+
 # 🧪 Validate Before Deployment
 
-Run:
+Run the seeded-fixture regression tests and static checks:
 
 ```bash
+npm test
 npm run typecheck
-```
-
-```bash
 npm run lint
-```
-
-```bash
 npm run build
 ```
 
-All three should pass before deploying.
-
-The project documentation explicitly includes these checks in its final verification process.
+The tests check compound-question decomposition, citation validation, anomaly/trend rules, embedding math, exact risk-evidence matching against seeded filings, and seeded metric extraction. They are deterministic regression checks—not a claim of broad real-world model accuracy.
 
 ---
 
@@ -641,19 +670,23 @@ Provide the relevant company and document information.
 
 ### 4. Wait for Processing
 
-The system:
+The system runs each stage in order:
 
 ```text
-Extracts Text
+Extract text
       ↓
-Creates Chunks
+Clean and chunk source passages
       ↓
-Indexes Evidence
+Extract metrics and validate their quotes
       ↓
-Extracts Metrics
+Scan for red flags and compare prior periods
       ↓
-Identifies Risks
+Create optional semantic embeddings
+      ↓
+Mark processing complete, partial, or failed
 ```
+
+The document detail page exposes agent activity and source evidence. Embedding status is independent; keyword retrieval remains available if semantic indexing is unavailable.
 
 ### 5. Explore Financial Metrics
 
@@ -708,40 +741,58 @@ Vercel
              Google Gemini
 ```
 
-The project documentation identifies **Vercel + Neon PostgreSQL** as the recommended deployment route for the Next.js application.
+**Vercel + Neon PostgreSQL** is the recommended deployment route for this Next.js application.
 
-### Vercel Deployment
+### Vercel + Neon (recommended)
 
-1. Push the project to GitHub.
-2. Create a Vercel project.
-3. Import the GitHub repository.
-4. Select Next.js.
-5. Configure environment variables.
-6. Deploy.
-7. Configure the production database.
-8. Apply the production schema.
-9. Verify the application.
+1. Push your branch to GitHub and import the repository into Vercel. A non-production branch normally creates a Preview deployment; merge into the configured production branch when ready to release.
+2. Create a PostgreSQL database in Neon (or another PostgreSQL provider). Keep the connection URL private and ensure its SSL parameters match the provider's instructions.
+3. In Vercel **Project → Settings → Environment Variables**, configure the values below for Preview and Production separately.
+4. Back up any existing database. For a new empty database, run the checked-in migrations once from a trusted machine/CI job using the production URL:
+
+   ```bash
+   DATABASE_URL='postgresql://...production connection...' npx drizzle-kit migrate
+   ```
+
+   PowerShell:
+
+   ```powershell
+   $env:DATABASE_URL = 'postgresql://...production connection...'
+   npx drizzle-kit migrate
+   ```
+
+   The checked-in `0000` migration initializes a new database. If your existing production database was previously initialized with `drizzle-kit push`, do not blindly replay it; review and apply the pending schema change safely, then reconcile the migration history.
+5. Set a strong `CRON_SECRET`. `vercel.json` schedules `/api/worker/documents` every minute; Vercel sends the matching bearer token to the worker. Confirm Cron is enabled for the project/plan.
+6. Deploy, then verify `/api/health`, registration/login, document upload, processing status, citations, report generation, and that a test queued job is drained. Upload a harmless test document before using private filings.
+7. The upload response uses Next.js `after()` for low latency, while the durable PostgreSQL job row plus scheduled worker recovers interrupted attempts. Function/cron duration limits still apply; move sustained or oversized work to a dedicated worker and use private object storage.
 
 ### Production Environment Variables
 
-Configure these through the hosting provider:
+Configure these in the hosting provider (never commit the values):
 
 ```text
 DATABASE_URL
 NEXTAUTH_SECRET
 NEXTAUTH_URL
-GEMINI_API_KEY
-GEMINI_MODEL
-GEMINI_PRO_MODEL
+GEMINI_API_KEY                 # optional; leave unset for evidence-only local fallbacks
+GEMINI_MODEL                   # e.g. gemini-3.6-flash
+GEMINI_PRO_MODEL               # e.g. gemini-3.6-flash
+GEMINI_EMBEDDING_MODEL         # e.g. gemini-embedding-001
+CRON_SECRET                    # required for scheduled durable-job recovery
+SEED_SECRET                    # only if controlled production demo seeding is needed
 ```
 
-Use a **different production `NEXTAUTH_SECRET`** from your local development secret.
+Use a **different production `NEXTAUTH_SECRET`** from your local development secret. Set `NEXTAUTH_URL` to the exact public HTTPS origin. Do not set `SEED_SECRET` unless you need it; the production seeder only accepts POST requests with the matching `x-seed-secret` header.
+
+### Other Node.js hosts
+
+Render, Railway, Fly.io, or a VPS can also run this app. Use a managed PostgreSQL database, set the same environment variables, run `npm ci` and `npm run build` during the build step, and `npm start` as the web start command. Apply migrations as a separate pre-deploy job. Configure a scheduler to GET `/api/worker/documents` with `Authorization: Bearer $CRON_SECRET` at a suitable interval. For workloads that can exceed request limits, move execution to a dedicated worker and store large source files in private object storage.
 
 ---
 
 # 🔐 Security
 
-Security is especially important because the application processes financial documents and uses authentication and external AI services.
+Security is especially important because the application processes financial documents and uses authentication and external AI services. Extracted source text is currently stored in PostgreSQL. When Gemini is configured, document excerpts/chunks and research prompts are sent to Google's Gemini API for model analysis or embeddings; confirm your data-handling and contractual requirements before uploading confidential material. Use a private database, HTTPS, and least-privilege credentials.
 
 ### Never commit:
 
@@ -792,7 +843,7 @@ coverage/
 * Avoid exposing raw database errors.
 * Review logs for confidential information.
 
-The project documentation specifically recommends rotating exposed keys, protecting `/api/seed`, restricting database access where possible, validating uploads, using object storage, and configuring backups.
+Rotate exposed keys, protect `/api/seed`, restrict database access, validate uploads, use object storage where appropriate, and configure backups.
 
 ---
 
@@ -800,15 +851,7 @@ The project documentation specifically recommends rotating exposed keys, protect
 
 ### AI Provider Availability
 
-Gemini quota or provider availability can affect:
-
-* Metric extraction
-* Risk analysis
-* Research Agent responses
-* Benchmarking
-* Report generation
-
-Local fallback behavior is available for supported workflows.
+Gemini quota or provider availability affects model-enriched extraction, additional risk review, semantic embeddings, and narrative research/benchmark/report responses. Local metric extraction, deterministic red flags, keyword search, stored evidence, and evidence-only research/report fallbacks remain available for supported workflows.
 
 ### PDF Processing
 
@@ -818,12 +861,13 @@ Image-only/scanned PDFs may require OCR.
 
 When deployed to serverless infrastructure:
 
-* Large PDF uploads may exceed request limits.
-* Long-running AI operations may time out.
-* Database connectivity must be configured correctly.
-* Large document storage should use object storage rather than database text fields.
+* Uploads are capped at 10 MB; hosting platforms may impose a smaller body-size limit.
+* `after()` starts the first attempt, while a PostgreSQL job record and scheduled worker provide recovery. Platform plan limits may be lower than the route's 300-second ceiling; confirm the cron is enabled and authorized.
+* Database connectivity and connection pooling must be configured for serverless usage.
+* Full extracted text is currently stored in PostgreSQL; use private object storage for larger-scale production deployments.
+* Chunk embeddings are JSONB and scored in app memory; migrate to pgvector for large corpora.
 
-These limitations are documented for the project's Vercel deployment architecture.
+For sustained production load, move ingestion and report generation to a dedicated worker so execution is independent of serverless request limits; the document queue is already persisted and can be drained by an external scheduler.
 
 ---
 
@@ -831,13 +875,13 @@ These limitations are documented for the project's Vercel deployment architectur
 
 ## `users` table does not exist
 
-Run:
+For a fresh local database, verify `DATABASE_URL` points to the intended database and run:
 
 ```bash
-npx drizzle-kit push
+npx drizzle-kit migrate
 ```
 
-Then restart the application.
+Then restart the application. If this database was previously initialized using `drizzle-kit push`, inspect its schema before applying migrations; do not replay the initial migration blindly.
 
 ---
 
@@ -907,22 +951,17 @@ Fix the reported errors before deployment.
 
 # 🔮 Future Improvements
 
-Potential future improvements include:
+Potential next improvements include:
 
-* Semantic/vector search
-* Improved document retrieval
-* More advanced financial metric extraction
-* Automated SEC filing ingestion
-* Enhanced risk analysis
+* pgvector-backed approximate nearest-neighbor search for larger collections
+* A dedicated non-serverless worker for document and report jobs that exceed function-duration limits
+* Object storage integration for uploaded source files
+* Broader held-out accuracy and source-faithfulness evaluation across real filings
+* More advanced financial metric extraction and SEC filing ingestion
 * Streaming AI responses
-* Background document processing
-* Object storage integration
-* Advanced role-based access control
-* Rate limiting
-* Production monitoring
-* Automated database backups
-* Additional AI providers
-* Expanded financial data integrations
+* Advanced role-based access control and rate limiting
+* Production monitoring and automated database backups
+* Additional AI providers and financial data integrations
 
 ---
 

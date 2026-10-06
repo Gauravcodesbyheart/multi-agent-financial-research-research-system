@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState, useRef } from "react";
-import { Send, Brain, Loader2, MessageSquare, FileText, ChevronDown, ChevronUp, Quote } from "lucide-react";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { Send, Brain, Loader2, FileText, ChevronDown, ChevronUp, Quote } from "lucide-react";
 import { formatDate, getInitials } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
@@ -12,7 +12,7 @@ interface Message {
   createdAt: string;
   agentType?: string | null;
   reasoning?: string | null;
-  citations?: Array<{ documentName: string; section: string; excerpt: string }> | null;
+  citations?: Array<{ citationId?: string; documentName: string; section: string; excerpt: string; chunkIndex?: number; pageNumber?: number | null }> | null;
 }
 
 interface Session {
@@ -34,49 +34,67 @@ export default function ResearchPage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [messagesForSessionId, setMessagesForSessionId] = useState<string | null>(null);
+  const sessionMessages = messagesForSessionId === activeSessionId ? messages : [];
+  const loadingMsgs = Boolean(activeSessionId && messagesForSessionId !== activeSessionId);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [expandedCitations, setExpandedCitations] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const activeSessionIdRef = useRef("");
 
-  async function fetchSessions() {
+  const fetchSessions = useCallback(async () => {
     const res = await fetch("/api/sessions");
     if (res.ok) {
       const d = await res.json();
       setSessions(d.sessions || []);
-      if (d.sessions?.length > 0 && !activeSessionId) {
-        setActiveSessionId(d.sessions[0].id);
-      }
+      setActiveSessionId((current) => current || d.sessions?.[0]?.id || "");
     }
-  }
-
-  async function fetchMessages() {
-    setLoadingMsgs(true);
-    const res = await fetch(`/api/chat?sessionId=${activeSessionId}`);
-    if (res.ok) setMessages((await res.json()).messages || []);
-    setLoadingMsgs(false);
-  }
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void fetchSessions(), 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [fetchSessions]);
+
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
 
   useEffect(() => {
     if (!activeSessionId) return;
-    const timer = window.setTimeout(() => void fetchMessages(), 0);
-    return () => window.clearTimeout(timer);
+
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch(`/api/chat?sessionId=${encodeURIComponent(activeSessionId)}`, { signal: controller.signal });
+        if (!res.ok) throw new Error("Could not load this research session's messages");
+        const data = await res.json();
+        if (!controller.signal.aborted) {
+          setMessages(data.messages || []);
+          setMessagesForSessionId(activeSessionId);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("Failed to load research messages:", error);
+          toast.error("Could not load this research session");
+          setMessages([]);
+          setMessagesForSessionId(activeSessionId);
+        }
+      }
+    })();
+
+    return () => controller.abort();
   }, [activeSessionId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, activeSessionId, loading]);
 
   async function sendMessage(content?: string) {
     const question = content || input.trim();
-    if (!question || !activeSessionId) return;
-    if (loading) return;
+    const requestSessionId = activeSessionId;
+    if (!question || !requestSessionId || loading || loadingMsgs) return;
 
     setInput("");
     setLoading(true);
@@ -94,19 +112,31 @@ export default function ResearchPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: activeSessionId, content: question }),
+        body: JSON.stringify({ sessionId: requestSessionId, content: question }),
       });
 
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        const d = await res.json();
-        setMessages((prev) => [
-          ...prev.filter((m) => m.id !== tempUserMsg.id),
-          d.userMessage,
-          d.aiMessage,
-        ]);
+        setMessages((prev) => activeSessionIdRef.current === requestSessionId
+          ? [...prev.filter((message) => message.id !== tempUserMsg.id), data.userMessage, data.aiMessage]
+          : prev);
       } else {
-        toast.error("Failed to get response");
-        setMessages((prev) => prev.filter((m) => m.id !== tempUserMsg.id));
+        setMessages((prev) => {
+          if (activeSessionIdRef.current !== requestSessionId) return prev;
+          const withoutOptimisticMessage = prev.filter((message) => message.id !== tempUserMsg.id);
+          return data.userMessage ? [...withoutOptimisticMessage, data.userMessage] : withoutOptimisticMessage;
+        });
+        if (activeSessionIdRef.current === requestSessionId) {
+          toast.error(typeof data.error === "string" ? data.error : "Failed to get response");
+        }
+      }
+    } catch (error) {
+      console.error("Research Agent request failed:", error);
+      setMessages((prev) => activeSessionIdRef.current === requestSessionId
+        ? prev.filter((message) => message.id !== tempUserMsg.id)
+        : prev);
+      if (activeSessionIdRef.current === requestSessionId) {
+        toast.error("Could not reach the Research Agent. Refresh the session to check whether your question was saved.");
       }
     } finally {
       setLoading(false);
@@ -165,7 +195,7 @@ export default function ResearchPage() {
               <div className="flex items-center justify-center h-32">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
               </div>
-            ) : messages.length === 0 ? (
+            ) : sessionMessages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full">
                 <div className="w-16 h-16 bg-gradient-to-br from-violet-500 to-pink-600 rounded-2xl flex items-center justify-center mb-4">
                   <Brain className="w-9 h-9 text-white" />
@@ -187,9 +217,9 @@ export default function ResearchPage() {
                 </div>
               </div>
             ) : (
-              messages.map((msg) => {
+              sessionMessages.map((msg) => {
                 const isUser = msg.role === "user";
-                const citations = msg.citations as Array<{ documentName: string; section: string; excerpt: string }> | null;
+                const citations = msg.citations || null;
 
                 return (
                   <div key={msg.id} className={`flex gap-3 animate-fade-in ${isUser ? "flex-row-reverse" : ""}`}>
@@ -241,8 +271,11 @@ export default function ResearchPage() {
                                 <div key={i} className="bg-slate-50 border border-slate-200 rounded-xl p-3">
                                   <div className="flex items-center gap-1.5 mb-1">
                                     <FileText className="w-3 h-3 text-blue-500" />
+                                    {c.citationId && <span className="text-xs font-bold text-violet-600">[{c.citationId}]</span>}
                                     <span className="text-xs font-semibold text-slate-700">{c.documentName}</span>
                                     <span className="text-xs text-slate-400">— {c.section}</span>
+                                    {typeof c.chunkIndex === "number" && <span className="text-xs text-slate-400">· chunk {c.chunkIndex + 1}</span>}
+                                    {typeof c.pageNumber === "number" && <span className="text-xs text-slate-400">· p. {c.pageNumber}</span>}
                                   </div>
                                   <p className="text-xs text-slate-500 italic">&quot;{c.excerpt}&quot;</p>
                                 </div>
@@ -306,13 +339,13 @@ export default function ResearchPage() {
                       }}
                       placeholder="Ask a financial research question... (Enter to send, Shift+Enter for new line)"
                       rows={2}
-                      disabled={loading}
+                      disabled={loading || loadingMsgs}
                       className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none disabled:opacity-60"
                     />
                   </div>
                   <button
                     onClick={() => sendMessage()}
-                    disabled={loading || !input.trim()}
+                    disabled={loading || loadingMsgs || !input.trim()}
                     className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-violet-600 to-pink-600 text-white rounded-xl text-sm font-semibold hover:from-violet-700 hover:to-pink-700 transition-all disabled:opacity-60 shadow-lg"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -323,7 +356,7 @@ export default function ResearchPage() {
                     <button
                       key={q}
                       onClick={() => sendMessage(q)}
-                      disabled={loading}
+                      disabled={loading || loadingMsgs}
                       className="text-xs px-3 py-1.5 bg-slate-100 text-slate-600 rounded-full hover:bg-violet-100 hover:text-violet-700 transition-colors disabled:opacity-50"
                     >
                       {q.length > 50 ? q.slice(0, 50) + "..." : q}

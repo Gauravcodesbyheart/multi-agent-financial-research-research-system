@@ -37,8 +37,8 @@ function ensure(height) {
   if (y + height > bottom) newPage();
 }
 
-function writeLines(lines, fontSize, color, lineHeight, font = "normal", indent = 0) {
-  pdf.setFont("helvetica", font);
+function writeLines(lines, fontSize, color, lineHeight, font = "normal", indent = 0, fontFace = "helvetica") {
+  pdf.setFont(fontFace, font);
   pdf.setFontSize(fontSize);
   pdf.setTextColor(...color);
   for (const line of lines) {
@@ -65,7 +65,7 @@ function codeLine(text) {
   ensure(lines.length * 4.2 + 4);
   pdf.setFillColor(243, 246, 250);
   pdf.roundedRect(margin, y - 3.5, contentWidth, lines.length * 4.2 + 5, 1.5, 1.5, "F");
-  writeLines(lines, 8, [35, 45, 60], 4.2, "courier", 4);
+  writeLines(lines, 8, [35, 45, 60], 4.2, "normal", 4, "courier");
 }
 
 function heading(text, level) {
@@ -112,7 +112,12 @@ function bullet(text, ordered = false, number = 0) {
 }
 
 function tableRow(cells, header = false) {
-  const widths = [contentWidth * 0.25, contentWidth * 0.1, contentWidth * 0.65];
+  const ratios = cells.length === 2
+    ? [0.28, 0.72]
+    : cells.length === 3
+      ? [0.25, 0.15, 0.6]
+      : Array.from({ length: cells.length }, () => 1 / Math.max(cells.length, 1));
+  const widths = ratios.map((ratio) => contentWidth * ratio);
   let x = margin;
   const rendered = cells.map((cell, i) => pdf.splitTextToSize(cell.replace(/`/g, ""), widths[i] - 3));
   const height = Math.max(...rendered.map((lines) => lines.length)) * 4 + 5;

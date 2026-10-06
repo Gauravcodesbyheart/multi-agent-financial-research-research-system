@@ -48,7 +48,7 @@ Services net sales: $85,200 million (21.6% of total net sales)
 Total net sales: $394,328 million
 
 RESULTS OF OPERATIONS
-Net sales: $394,328 million (2023) vs $394,328 million (2022), decrease of $1,022 million
+Net sales: $394,328 million (2023) vs $395,350 million (2022), decrease of $1,022 million (0.26%)
 Gross margin: $169,148 million, representing 42.9% of net sales
 Operating expenses: $54,847 million
 Operating income: $114,301 million, representing 29.0% of net sales
@@ -92,7 +92,7 @@ LIQUIDITY AND CAPITAL RESOURCES
 The Company believes its existing cash and cash equivalents, along with commercial paper programs totaling $6.0 billion, provide adequate liquidity to meet its financial needs. The Company generated $114.2 billion in operating cash flows during 2023.
 
 MANAGEMENT DISCUSSION AND ANALYSIS
-Revenue was flat year-over-year due to foreign exchange headwinds of approximately $5.1 billion. Services revenue grew 16% to $85.2 billion, demonstrating continued ecosystem monetization. iPhone revenue declined 2% primarily due to macroeconomic headwinds in China. The Company returned over $90 billion to shareholders through dividends and buybacks.`,
+Revenue declined approximately 0.26% year-over-year (nearly flat) due to foreign exchange headwinds of approximately $5.1 billion. Services revenue grew 16% to $85.2 billion, demonstrating continued ecosystem monetization. iPhone revenue declined 2% primarily due to macroeconomic headwinds in China. The Company returned over $90 billion to shareholders through dividends and buybacks.`,
 
   "Microsoft Corporation": `MICROSOFT CORPORATION
 ANNUAL REPORT 2023
@@ -176,7 +176,7 @@ REVENUE BREAKDOWN
 Automotive revenues: $82,423 million (80% of total)
 Energy generation and storage: $6,035 million (6% of total)
 Services and other: $8,319 million (8% of total)
-Total revenues: $96,773 million (19% growth YoY)
+Total revenues: $96,773 million (18.8% growth YoY)
 
 RESULTS OF OPERATIONS
 Total revenues: $96,773 million vs $81,462 million (2022), +18.8%
@@ -238,7 +238,7 @@ SEGMENT NET SALES
 North America: $352,828 million (58% of total)
 International: $131,200 million (22% of total)
 Amazon Web Services (AWS): $90,757 million (15% of total)
-Total net sales: $574,785 million (12% growth YoY)
+Total net sales: $574,785 million (11.8% growth YoY)
 
 RESULTS OF OPERATIONS
 Net sales: $574,785 million vs $513,983 million (2022), +11.8%

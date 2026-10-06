@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { researchSessions, documents, chatMessages } from "@/db/schema";
-import { eq, desc, count } from "drizzle-orm";
+import { and, eq, desc, count } from "drizzle-orm";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -21,12 +21,12 @@ export async function GET() {
       const [{ docCount }] = await db
         .select({ docCount: count() })
         .from(documents)
-        .where(eq(documents.sessionId, s.id));
+        .where(and(eq(documents.sessionId, s.id), eq(documents.userId, session.user.id)));
 
       const [{ msgCount }] = await db
         .select({ msgCount: count() })
         .from(chatMessages)
-        .where(eq(chatMessages.sessionId, s.id));
+        .where(and(eq(chatMessages.sessionId, s.id), eq(chatMessages.userId, session.user.id)));
 
       return { ...s, documentCount: Number(docCount), messageCount: Number(msgCount) };
     })

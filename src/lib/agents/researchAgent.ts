@@ -1,72 +1,59 @@
-// Research Agent — answers multi-part financial questions with citations
+// Research Agent — decomposes compound questions, retrieves source chunks, and returns verified citations.
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { chatMessages, documents, documentChunks, financialMetrics, riskFlags, companies, agentLogs, researchSessions } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
-import { DEFAULT_GEMINI_MODEL, generateWithGemini } from "./gemini";
-import { searchDocumentChunks } from "./documentAgent";
+import { agentLogs, documents, researchSessions } from "@/db/schema";
+import { DEFAULT_GEMINI_MODEL, generateJSON } from "./gemini";
+import { searchDocumentCollection, type RetrievedChunk } from "./documentAgent";
+import { tryCreateQueryEmbedding } from "./embeddingAgent";
+import { decomposeResearchQuestion, validateGroundedResearchAnswer } from "./analysisUtils";
 
-interface Citation {
+export interface Citation {
+  citationId: string;
   documentName: string;
   section: string;
   excerpt: string;
+  chunkIndex: number;
+  pageNumber: number | null;
 }
 
-async function buildLocalResearchAnswer(
-  sessionId: string,
-  question: string
-): Promise<{ answer: string; citations: Citation[]; reasoning: string }> {
-  const sessionDocs = await db
-    .select()
-    .from(documents)
-    .where(eq(documents.sessionId, sessionId));
-  const companyIds = [...new Set(sessionDocs.map((doc) => doc.companyId).filter(Boolean))] as string[];
-  const companiesData = companyIds.length > 0
-    ? await db.select().from(companies).where(inArray(companies.id, companyIds))
-    : [];
-  const metricsData = companyIds.length > 0
-    ? await db.select().from(financialMetrics).where(inArray(financialMetrics.companyId, companyIds))
-    : [];
-  const risksData = companyIds.length > 0
-    ? await db.select().from(riskFlags).where(inArray(riskFlags.companyId, companyIds))
-    : [];
+interface RetrievedEvidence extends RetrievedChunk {
+  queries: string[];
+}
 
-  const relevantChunks: Array<{ documentName: string; section: string; excerpt: string }> = [];
-  for (const doc of sessionDocs.slice(0, 5)) {
-    const chunks = await searchDocumentChunks(doc.id, question, 3);
-    chunks.forEach((chunk) => relevantChunks.push({
-      documentName: doc.fileName,
-      section: chunk.section,
-      excerpt: chunk.content.slice(0, 300),
-    }));
+function buildCitations(chunks: RetrievedEvidence[]): Citation[] {
+  return chunks.map((chunk, index) => ({
+    citationId: `S${index + 1}`,
+    documentName: chunk.documentName || "Uploaded document",
+    section: chunk.section,
+    excerpt: chunk.content.slice(0, 800),
+    chunkIndex: chunk.chunkIndex,
+    pageNumber: chunk.pageNumber,
+  }));
+}
+
+function buildLocalResearchAnswer(
+  question: string,
+  searchSteps: string[],
+  chunks: RetrievedEvidence[],
+): { answer: string; citations: Citation[]; reasoning: string } {
+  const citations = buildCitations(chunks);
+  if (citations.length === 0) {
+    return {
+      answer: `I couldn't find matching evidence for this question in the indexed documents. Try narrowing the question or check that document processing has completed. No answer has been inferred from outside sources.`,
+      citations: [],
+      reasoning: `Searched ${searchSteps.length} retrieval step(s) using local keyword search; no source passages passed the relevance filter.`,
+    };
   }
 
-  const metricsText = metricsData.slice(0, 10).map((metric) => {
-    const company = companiesData.find((item) => item.id === metric.companyId);
-    return `- ${company?.name || "Unknown company"}: revenue ${metric.revenue || "N/A"}M, net income ${metric.netIncome || "N/A"}M, gross margin ${metric.grossMargin || "N/A"}, operating margin ${metric.operatingMargin || "N/A"}, ROE ${metric.roe || "N/A"}`;
-  }).join("\n");
-  const risksText = risksData.slice(0, 8).map((risk) => `- [${risk.severity}] ${risk.title}: ${risk.description}`).join("\n");
-  const citations = relevantChunks.slice(0, 5);
-  const answer = `**Local Research Mode**
-
-Gemini is currently unavailable, so this answer uses the uploaded documents and stored analysis data.
-
-**Question:** ${question}
-
-**Available financial metrics**
-${metricsText || "No extracted financial metrics are available for this session."}
-
-**Risk indicators**
-${risksText || "No stored risk indicators are available for this session."}
-
-**Relevant document evidence**
-${citations.map((citation) => `- ${citation.documentName} (${citation.section}): ${citation.excerpt}`).join("\n") || "No matching document passages were found."}
-
-For full AI-generated reasoning, restore Gemini API quota or configure a key with available quota.`;
-
+  const evidence = citations.map((citation) =>
+    `[${citation.citationId}] ${citation.documentName} — ${citation.section}, chunk ${citation.chunkIndex + 1}: "${citation.excerpt}"`
+  ).join("\n\n");
+  const answer = `I could not generate a synthesized answer for “${question}”. The passages below were retrieved from your documents; they are source evidence, not conclusions.\n\n${evidence}`;
+  const mode = chunks.some((chunk) => chunk.retrievalMethod === "embedding") ? "semantic embedding search" : "keyword fallback search";
   return {
     answer,
     citations,
-    reasoning: `Local fallback searched ${sessionDocs.length} documents, found ${relevantChunks.length} relevant passages, analyzed ${metricsData.length} metric sets, and reviewed ${risksData.length} risks.`,
+    reasoning: `Research steps: ${searchSteps.join(" → ")}. Retrieved ${citations.length} evidence passages using ${mode}. This is a retrieval summary, not hidden chain-of-thought.`,
   };
 }
 
@@ -74,131 +61,132 @@ export async function answerResearchQuestion(
   sessionId: string,
   userId: string,
   question: string,
-  conversationHistory: Array<{ role: string; content: string }>
+  conversationHistory: Array<{ role: string; content: string }>,
 ): Promise<{ answer: string; citations: Citation[]; reasoning: string }> {
-  const start = Date.now();
+  const startedAt = Date.now();
+  const [ownedSession] = await db.select({ id: researchSessions.id })
+    .from(researchSessions)
+    .where(and(eq(researchSessions.id, sessionId), eq(researchSessions.userId, userId)))
+    .limit(1);
+  if (!ownedSession) throw new Error("Research session not found");
 
   await db.insert(agentLogs).values({
     sessionId,
     agentName: "Research Agent",
     action: "Processing research question",
     status: "running",
-    details: question.slice(0, 200),
+    details: question.slice(0, 300),
   });
 
-  try {
-    // Get all documents in this session
-    const sessionDocs = await db
-      .select()
-      .from(documents)
-      .where(eq(documents.sessionId, sessionId));
+  const searchSteps = decomposeResearchQuestion(question);
+  const sessionDocs = await db.select({ id: documents.id })
+    .from(documents)
+    .where(and(eq(documents.sessionId, sessionId), eq(documents.userId, userId)))
+    .orderBy(desc(documents.createdAt));
+  const documentIds = sessionDocs.map((document) => document.id);
+  const evidenceByChunk = new Map<string, RetrievedEvidence>();
 
-    // Get companies from session
-    const companyIds = [...new Set(sessionDocs.map((d) => d.companyId).filter(Boolean))] as string[];
-    const companiesData = companyIds.length > 0
-      ? await db.select().from(companies).where(inArray(companies.id, companyIds))
-      : [];
-
-    // Search relevant chunks across all documents
-    const relevantChunks: Array<{ documentName: string; section: string; excerpt: string; content: string }> = [];
-    for (const doc of sessionDocs.slice(0, 5)) {
-      const chunks = await searchDocumentChunks(doc.id, question, 3);
-      chunks.forEach((chunk) => {
-        relevantChunks.push({
-          documentName: doc.fileName,
-          section: chunk.section,
-          excerpt: chunk.content.slice(0, 200),
-          content: chunk.content,
-        });
-      });
+  for (const step of searchSteps) {
+    const queryEmbedding = await tryCreateQueryEmbedding(step);
+    const matches = await searchDocumentCollection(documentIds, step, 8, queryEmbedding);
+    for (const match of matches) {
+      const key = `${match.documentId}:${match.chunkIndex}`;
+      const existing = evidenceByChunk.get(key);
+      if (existing) {
+        existing.queries = [...new Set([...existing.queries, step])];
+        existing.score = Math.max(existing.score, match.score);
+      } else {
+        evidenceByChunk.set(key, { ...match, queries: [step] });
+      }
     }
+  }
 
-    // Get financial metrics
-    const metricsData = companyIds.length > 0
-      ? await db.select().from(financialMetrics).where(inArray(financialMetrics.companyId, companyIds))
-      : [];
-
-    // Get risk data
-    const risksData = companyIds.length > 0
-      ? await db.select().from(riskFlags).where(inArray(riskFlags.companyId, companyIds))
-      : [];
-
-    // Build context
-    const context = `
-AVAILABLE DOCUMENTS: ${sessionDocs.map((d) => d.fileName).join(", ")}
-
-COMPANIES: ${companiesData.map((c) => `${c.name} (${c.ticker || "N/A"})`).join(", ")}
-
-RELEVANT DOCUMENT EXCERPTS:
-${relevantChunks.map((c) => `[${c.documentName} - ${c.section}]: ${c.content.slice(0, 400)}`).join("\n\n")}
-
-EXTRACTED FINANCIAL METRICS:
-${metricsData.map((m) => {
-  const co = companiesData.find((c) => c.id === m.companyId);
-  return `${co?.name || "Unknown"} (${m.fiscalYear}): Revenue=${m.revenue}M, Net Income=${m.netIncome}M, Gross Margin=${m.grossMargin}, ROE=${m.roe}`;
-}).join("\n")}
-
-IDENTIFIED RISKS:
-${risksData.map((r) => `[${r.severity.toUpperCase()}] ${r.title}: ${r.description}`).join("\n")}
-`;
-
-    // Build conversation prompt
-    const historyText = conversationHistory
-      .slice(-6)
-      .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
-      .join("\n");
-
-    const systemPrompt = `You are an expert financial research analyst AI. You answer questions about company financials
-based STRICTLY on the provided document data. You NEVER make up numbers or facts not in the documents.
-For every claim, cite the source document and section. Provide step-by-step reasoning.
-If information is not available in the documents, say so clearly.`;
-
-    const prompt = `${context}
-
-CONVERSATION HISTORY:
-${historyText}
-
-CURRENT QUESTION: ${question}
-
-Provide:
-1. A comprehensive, step-by-step answer with exact numbers from the documents
-2. Cite your sources with document name and section
-3. Explain your reasoning process
-4. If comparing companies, use a structured format
-
-Answer in professional analyst language. Be precise and cite all numbers.`;
-
-    const response = await generateWithGemini(prompt, systemPrompt, DEFAULT_GEMINI_MODEL);
-
-    // Extract citations from relevant chunks
-    const citations: Citation[] = relevantChunks.slice(0, 5).map((chunk) => ({
-      documentName: chunk.documentName,
-      section: chunk.section,
-      excerpt: chunk.excerpt,
-    }));
-
-    // Extract reasoning
-    const reasoning = `Agent searched ${sessionDocs.length} documents, found ${relevantChunks.length} relevant passages, analyzed ${metricsData.length} metric sets and ${risksData.length} risk factors.`;
-
+  const relevantChunks = [...evidenceByChunk.values()]
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 8);
+  if (relevantChunks.length === 0) {
+    const fallback = buildLocalResearchAnswer(question, searchSteps, relevantChunks);
     await db.insert(agentLogs).values({
       sessionId,
       agentName: "Research Agent",
-      action: "Question answered",
+      action: "No relevant source evidence found",
       status: "completed",
-      details: `Analyzed ${sessionDocs.length} docs, ${relevantChunks.length} chunks`,
-      duration: Date.now() - start,
+      details: `Searched ${documentIds.length} documents in ${searchSteps.length} retrieval step(s).`,
+      duration: Date.now() - startedAt,
     });
+    return fallback;
+  }
 
-    return { answer: response, citations, reasoning };
-  } catch (error) {
-    const fallback = await buildLocalResearchAnswer(sessionId, question);
+  const citations = buildCitations(relevantChunks);
+  const citationContext = citations.map((citation) =>
+    `[${citation.citationId}] DOCUMENT: ${citation.documentName}\nSECTION: ${citation.section}\nCHUNK: ${citation.chunkIndex + 1}\nEXCERPT: ${citation.excerpt}`
+  ).join("\n\n");
+  const historyText = conversationHistory
+    .slice(-6)
+    .map((message) => `${message.role.toUpperCase()}: ${message.content.slice(0, 1200)}`)
+    .join("\n");
+
+  try {
+    const systemPrompt = `You are a careful financial research analyst. Use only the supplied indexed-document excerpts. Return valid JSON matching the requested schema, with no Markdown fences.
+Each retrieval step must be answered with atomic claims. Every factual claim must include one or more citation_ids and an exact supporting_quotes value for every cited source ID. Each quote must be a contiguous exact excerpt of at least 12 characters from that source. Preserve numbers and units exactly as written; do not convert, calculate, or infer. Do not use outside knowledge or conversation history as evidence. If no excerpt supports a step, set not_supported to true and return an empty claims array. Do not give investment advice.`;
+    const prompt = `Return one JSON object with this shape:
+{
+  "steps": [
+    {
+      "question": "the corresponding retrieval step",
+      "claims": [
+        {
+          "text": "one source-supported factual claim",
+          "citation_ids": ["S1"],
+          "supporting_quotes": {"S1": "exact contiguous quote copied from source S1"}
+        }
+      ],
+      "not_supported": false
+    }
+  ]
+}
+
+USER QUESTION: ${question}
+
+RETRIEVAL PLAN (create one step in the same order for each item):
+${searchSteps.map((step, index) => `${index + 1}. ${step}`).join("\n")}
+
+SOURCE EVIDENCE:
+${citationContext}
+
+RECENT CONVERSATION (context only; never cite or treat as evidence):
+${historyText || "None"}
+
+Each step must have its own claims. Split compound reasoning into atomic claims. Every number in a claim must appear verbatim in at least one of its exact supporting quotes. When a comparison relies on multiple sources, cite and quote each one.`;
+    const rawResponse = await generateJSON<unknown>(prompt, systemPrompt, DEFAULT_GEMINI_MODEL);
+    const validated = validateGroundedResearchAnswer(rawResponse, citations);
+    if (!validated) throw new Error("Generated response did not pass source-quote and numeric citation validation");
+
+    const usedIds = new Set(validated.usedCitationIds);
+    const usedCitations = citations.filter((citation) => usedIds.has(citation.citationId));
+    const retrievalMode = relevantChunks.some((chunk) => chunk.retrievalMethod === "embedding")
+      ? "semantic embedding retrieval"
+      : "keyword fallback retrieval";
+    const reasoning = `Retrieval plan: ${searchSteps.join(" → ")}. Searched ${documentIds.length} session documents using ${retrievalMode}; validated exact source quotes and numeric tokens for ${usedIds.size} cited passages. This is a method summary, not hidden chain-of-thought.`;
+
     await db.insert(agentLogs).values({
       sessionId,
       agentName: "Research Agent",
-      action: "Question answered with local fallback",
+      action: "Question answered with validated cited evidence",
       status: "completed",
-      details: `Gemini unavailable: ${String(error).slice(0, 300)}`,
-      duration: Date.now() - start,
+      details: `Searched ${documentIds.length} documents, ${searchSteps.length} steps; ${usedCitations.length} validated citations used.`,
+      duration: Date.now() - startedAt,
+    });
+    return { answer: validated.answer, citations: usedCitations, reasoning };
+  } catch (error) {
+    const fallback = buildLocalResearchAnswer(question, searchSteps, relevantChunks);
+    await db.insert(agentLogs).values({
+      sessionId,
+      agentName: "Research Agent",
+      action: "Answered with local evidence fallback",
+      status: "partial",
+      details: `Gemini unavailable or failed citation validation: ${String(error).slice(0, 500)}`,
+      duration: Date.now() - startedAt,
     });
     return fallback;
   }

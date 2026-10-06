@@ -16,7 +16,12 @@ interface BenchmarkResult {
   metrics: Array<{
     id: string;
     companyId: string;
+    fiscalYear: number | null;
+    fiscalPeriod: string | null;
     revenue: string | null;
+    revenueGrowth: string | null;
+    netIncome: string | null;
+    totalDebt: string | null;
     grossMargin: string | null;
     operatingMargin: string | null;
     netMargin: string | null;
@@ -25,7 +30,9 @@ interface BenchmarkResult {
     roe: string | null;
     freeCashFlow: string | null;
     ebitdaMargin: string | null;
+    sourceDocument: string | null;
   }>;
+  risks: Array<{ companyId: string | null; severity: string }>;
   companies: Company[];
   insights: string;
 }
@@ -76,6 +83,14 @@ export default function BenchmarkPage() {
   function toggleCompany(id: string) {
     setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   }
+
+  const periodLabels = result
+    ? result.companies.map((company) => {
+        const metric = result.metrics.find((item) => item.companyId === company.id);
+        return metric ? `${metric.fiscalPeriod || "Annual"} ${metric.fiscalYear ?? "N/A"}` : "No stored metrics";
+      })
+    : [];
+  const hasMismatchedPeriods = new Set(periodLabels).size > 1;
 
   const chartData = result
     ? result.companies.map((co, i) => {
@@ -173,6 +188,7 @@ export default function BenchmarkPage() {
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100">
               <h2 className="font-semibold text-slate-900">Side-by-Side Comparison</h2>
+              {hasMismatchedPeriods && <p className="mt-1 text-xs text-amber-700">The latest available fiscal periods differ or are missing for these companies. Review the period and source rows before comparing results.</p>}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -188,7 +204,11 @@ export default function BenchmarkPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {[
-                    { label: "Revenue", key: "revenue", fmt: (v: string | null) => formatCurrency(parseFloat(v || "0") * 1e6, true) },
+                    { label: "Fiscal Period", key: "fiscalPeriod", fmt: (v: string | null) => v || "N/A" },
+                    { label: "Revenue", key: "revenue", fmt: (v: string | null) => v ? formatCurrency(parseFloat(v) * 1e6, true) : "N/A" },
+                    { label: "Revenue Growth", key: "revenueGrowth", fmt: (v: string | null) => formatPercent(v) },
+                    { label: "Net Income", key: "netIncome", fmt: (v: string | null) => v ? formatCurrency(parseFloat(v) * 1e6, true) : "N/A" },
+                    { label: "Total Debt", key: "totalDebt", fmt: (v: string | null) => v ? formatCurrency(parseFloat(v) * 1e6, true) : "N/A" },
                     { label: "Gross Margin", key: "grossMargin", fmt: (v: string | null) => formatPercent(v) },
                     { label: "Operating Margin", key: "operatingMargin", fmt: (v: string | null) => formatPercent(v) },
                     { label: "Net Margin", key: "netMargin", fmt: (v: string | null) => formatPercent(v) },
@@ -196,15 +216,25 @@ export default function BenchmarkPage() {
                     { label: "Current Ratio", key: "currentRatio", fmt: (v: string | null) => formatNumber(v) },
                     { label: "D/E Ratio", key: "debtToEquity", fmt: (v: string | null) => formatNumber(v) },
                     { label: "ROE", key: "roe", fmt: (v: string | null) => formatPercent(v) },
-                    { label: "Free Cash Flow", key: "freeCashFlow", fmt: (v: string | null) => formatCurrency(parseFloat(v || "0") * 1e6, true) },
+                    { label: "Free Cash Flow", key: "freeCashFlow", fmt: (v: string | null) => v ? formatCurrency(parseFloat(v) * 1e6, true) : "N/A" },
+                    { label: "Source Document", key: "sourceDocument", fmt: (v: string | null) => v || "N/A" },
+                    { label: "Risk Flags", key: "riskCount", fmt: (v: string | null) => v || "0" },
+                    { label: "Critical Risk Flags", key: "criticalRiskCount", fmt: (v: string | null) => v || "0" },
                   ].map(({ label, key, fmt }) => (
                     <tr key={key} className="hover:bg-slate-50 transition-colors">
                       <td className="px-5 py-3 font-medium text-slate-700 text-xs">{label}</td>
                       {result.companies.map((co) => {
-                        const m = result.metrics.find((m) => m.companyId === co.id);
-                        const val = m ? (m as Record<string, string | null>)[key] : null;
+                        const m = result.metrics.find((metric) => metric.companyId === co.id);
+                        const companyRisks = result.risks.filter((risk) => risk.companyId === co.id);
+                        const val = key === "riskCount"
+                          ? String(companyRisks.length)
+                          : key === "criticalRiskCount"
+                            ? String(companyRisks.filter((risk) => risk.severity === "critical").length)
+                            : key === "fiscalPeriod"
+                              ? m ? `${m.fiscalPeriod || "N/A"} ${m.fiscalYear || ""}`.trim() : null
+                              : m ? (m as Record<string, string | null>)[key] : null;
                         return (
-                          <td key={co.id} className="text-center px-4 py-3 text-xs font-semibold text-slate-900">
+                          <td key={co.id} className={`text-center px-4 py-3 text-xs font-semibold text-slate-900 ${key === "sourceDocument" ? "max-w-xs whitespace-normal break-all" : ""}`}>
                             {fmt(val)}
                           </td>
                         );

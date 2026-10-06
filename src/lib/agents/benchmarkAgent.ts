@@ -1,7 +1,7 @@
 // Benchmark Agent — compares companies across financial metrics
 import { db } from "@/db";
 import { financialMetrics, companies, riskFlags, agentLogs, documents } from "@/db/schema";
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { generateWithGemini } from "./gemini";
 
 export async function generateBenchmarkInsights(
@@ -33,7 +33,7 @@ export async function generateBenchmarkInsights(
         inArray(financialMetrics.companyId, companyIds),
         or(eq(documents.userId, userId), eq(documents.isSeeded, true)),
       ))
-      .orderBy(desc(financialMetrics.fiscalYear), desc(financialMetrics.extractedAt));
+      .orderBy(sql`${financialMetrics.fiscalYear} DESC NULLS LAST`, desc(financialMetrics.extractedAt));
 
     const companiesData = await db
       .select()
@@ -59,10 +59,16 @@ export async function generateBenchmarkInsights(
         name: company.name,
         ticker: company.ticker,
         sector: company.sector,
+        fiscalYear: latestMetrics?.fiscalYear ?? null,
+        fiscalPeriod: latestMetrics?.fiscalPeriod ?? null,
+        sourceDocument: metricsData.find((row) => row.financial_metrics.companyId === company.id)?.documents.fileName || "Unknown source document",
         metrics: latestMetrics
           ? {
               revenue: latestMetrics.revenue,
               revenueGrowth: latestMetrics.revenueGrowth,
+              netIncome: latestMetrics.netIncome,
+              totalDebt: latestMetrics.totalDebt,
+              freeCashFlow: latestMetrics.freeCashFlow,
               grossMargin: latestMetrics.grossMargin,
               operatingMargin: latestMetrics.operatingMargin,
               netMargin: latestMetrics.netMargin,
@@ -77,18 +83,11 @@ export async function generateBenchmarkInsights(
       };
     });
 
-    const prompt = `As a senior financial analyst, compare these companies and provide actionable insights:
+    const prompt = `As a careful financial analyst, compare the supplied company data. This data comes only from the named source documents.
 
 ${JSON.stringify(companyContext, null, 2)}
 
-Provide a comprehensive benchmark analysis covering:
-1. Revenue & Growth comparison
-2. Profitability analysis (margins comparison)
-3. Financial health (leverage, liquidity)
-4. Risk profile comparison
-5. Investment recommendation and ranking
-
-Be specific, cite exact numbers, and provide professional analyst-quality insights.`;
+Compare revenue/growth, profitability, leverage/liquidity, and risk counts. Name the fiscal period and source document beside each company's figures. Do not silently compare mismatched years or periods; state when comparisons are not like-for-like. Do not give buy/sell investment recommendations. Do not infer facts that are not in the supplied data. If a value is missing, say N/A.`;
 
     let insights: string;
     try {
@@ -129,13 +128,22 @@ Be specific, cite exact numbers, and provide professional analyst-quality insigh
 }
 
 function createLocalBenchmarkInsights(
-  context: Array<{ name: string; ticker: string | null; metrics: Record<string, string | null> | null; riskCount: number; criticalRisks: number }>
+  context: Array<{ name: string; ticker: string | null; metrics: Record<string, string | null> | null; riskCount: number; criticalRisks: number; fiscalYear?: number | null; fiscalPeriod?: string | null; sourceDocument?: string }>
 ): string {
+  const percent = (value: string | null | undefined) => {
+    const number = value === null || value === undefined || value === "" ? NaN : Number(value);
+    return Number.isFinite(number) ? `${(number * 100).toFixed(2)}%` : "N/A";
+  };
+  const amount = (value: string | null | undefined) => value === null || value === undefined || value === "" ? "N/A" : `${value}M USD`;
+  const periodFor = (company: typeof context[number]) => `${company.fiscalPeriod || "Annual"} ${company.fiscalYear ?? "N/A"}`;
   const ranked = [...context].sort((a, b) => Number(b.metrics?.roe || 0) - Number(a.metrics?.roe || 0));
   const lines = ranked.map((company, index) => {
     const metrics = company.metrics;
     const label = company.ticker ? `${company.name} (${company.ticker})` : company.name;
-    return `${index + 1}. ${label}: revenue ${metrics?.revenue ?? "N/A"}M, net margin ${metrics?.netMargin ?? "N/A"}, ROE ${metrics?.roe ?? "N/A"}, ${company.riskCount} risks (${company.criticalRisks} critical).`;
+    const source = company.sourceDocument || "Unknown source document";
+    return `${index + 1}. ${label} (${periodFor(company)}; source ${source}): revenue ${amount(metrics?.revenue)}, growth ${percent(metrics?.revenueGrowth)}, net income ${amount(metrics?.netIncome)}, net margin ${percent(metrics?.netMargin)}, total debt ${amount(metrics?.totalDebt)}, free cash flow ${amount(metrics?.freeCashFlow)}, ROE ${percent(metrics?.roe)}, current ratio ${metrics?.currentRatio ?? "N/A"}, ${company.riskCount} risks (${company.criticalRisks} critical).`;
   });
-  return `AI insights are temporarily unavailable, so this comparison uses the extracted document metrics and risks.\n\nRanking by extracted ROE:\n${lines.join("\n")}\n\nVerify values against the uploaded reports, especially where a metric is N/A.`;
+  const periods = new Set(context.map(periodFor));
+  const comparability = periods.size > 1 ? "Latest fiscal periods differ or are missing; these figures are not a like-for-like comparison." : "Latest fiscal periods match.";
+  return `AI insights are temporarily unavailable, so this comparison uses the extracted document metrics and risks.\n${comparability}\n\nRanking by extracted ROE:\n${lines.join("\n")}\n\nVerify values against the named source filings, especially where a metric is N/A.`;
 }
