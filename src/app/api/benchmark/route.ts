@@ -1,58 +1,92 @@
 import { NextRequest, NextResponse } from "next/server";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
-import { financialMetrics, companies, riskFlags, documents } from "@/db/schema";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { companies, documents, financialMetrics, researchSessions, riskFlags } from "@/db/schema";
 import { generateBenchmarkInsights } from "@/lib/agents/benchmarkAgent";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { companyIds, sessionId } = await req.json();
-  if (!companyIds || companyIds.length < 2) {
-    return NextResponse.json({ error: "At least 2 companies required" }, { status: 400 });
+  let body: { companyIds?: unknown; sessionId?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Request body must be valid JSON" }, { status: 400 });
+  }
+  const companyIds = Array.isArray(body.companyIds)
+    ? [...new Set(body.companyIds.filter((id): id is string => typeof id === "string" && Boolean(id)))]
+    : [];
+  const sessionId = typeof body.sessionId === "string" && body.sessionId ? body.sessionId : undefined;
+  if (companyIds.length < 2 || companyIds.length > 8) {
+    return NextResponse.json({ error: "Select between 2 and 8 companies" }, { status: 400 });
   }
 
-  const hasAI = process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.startsWith("AIzaSyDemo");
+  if (sessionId) {
+    const [ownedSession] = await db.select({ id: researchSessions.id })
+      .from(researchSessions)
+      .where(and(eq(researchSessions.id, sessionId), eq(researchSessions.userId, session.user.id)))
+      .limit(1);
+    if (!ownedSession) return NextResponse.json({ error: "Research session not found" }, { status: 404 });
+  }
 
-  const metricsData = await db
-    .select()
-    .from(financialMetrics)
-    .innerJoin(documents, eq(financialMetrics.documentId, documents.id))
+  const [companiesData, accessibleDocuments] = await Promise.all([
+    db.select().from(companies).where(inArray(companies.id, companyIds)),
+    db.select({ companyId: documents.companyId })
+      .from(documents)
+      .where(and(
+        inArray(documents.companyId, companyIds),
+        or(eq(documents.userId, session.user.id), eq(documents.isSeeded, true)),
+      )),
+  ]);
+  const accessibleCompanyIds = new Set(accessibleDocuments.map((document) => document.companyId).filter(Boolean));
+  if (companiesData.length !== companyIds.length || companyIds.some((id) => !accessibleCompanyIds.has(id))) {
+    return NextResponse.json({ error: "Each selected company must have a document you can access." }, { status: 400 });
+  }
+
+  const allowedDocuments = await db.select({ id: documents.id })
+    .from(documents)
     .where(and(
-      inArray(financialMetrics.companyId, companyIds),
+      inArray(documents.companyId, companyIds),
       or(eq(documents.userId, session.user.id), eq(documents.isSeeded, true)),
     ));
+  const documentIds = allowedDocuments.map((document) => document.id);
+  const [metricsData, risksData] = documentIds.length > 0
+    ? await Promise.all([
+        db.select({ metrics: financialMetrics, sourceDocument: documents.fileName })
+          .from(financialMetrics)
+          .innerJoin(documents, eq(financialMetrics.documentId, documents.id))
+          .where(inArray(financialMetrics.documentId, documentIds))
+          .orderBy(sql`${financialMetrics.fiscalYear} DESC NULLS LAST`, desc(financialMetrics.extractedAt)),
+        db.select().from(riskFlags).where(inArray(riskFlags.documentId, documentIds)),
+      ])
+    : [[], []];
 
-  const companiesData = await db
-    .select()
-    .from(companies)
-    .where(inArray(companies.id, companyIds));
-
-  const risksData = await db
-    .select()
-    .from(riskFlags)
-    .innerJoin(documents, eq(riskFlags.documentId, documents.id))
-    .where(and(
-      inArray(riskFlags.companyId, companyIds),
-      or(eq(documents.userId, session.user.id), eq(documents.isSeeded, true)),
-    ));
-
-  let insights = "Configure GEMINI_API_KEY for AI-powered benchmark insights.";
-  if (hasAI) {
-    try {
-      insights = await generateBenchmarkInsights(companyIds, session.user.id, sessionId);
-    } catch (e) {
-      insights = `Error generating insights: ${String(e)}`;
+  const latestByCompany = new Map<string, typeof metricsData[number]>();
+  for (const row of metricsData) {
+    if (row.metrics.companyId && !latestByCompany.has(row.metrics.companyId)) {
+      latestByCompany.set(row.metrics.companyId, row);
     }
+  }
+  const latestMetrics = [...latestByCompany.values()].map(({ metrics, sourceDocument }) => ({
+    ...metrics,
+    sourceDocument,
+  }));
+
+  let insights: string;
+  try {
+    // The agent provides a deterministic local comparison when Gemini is unavailable.
+    insights = await generateBenchmarkInsights(companyIds, session.user.id, sessionId);
+  } catch (error) {
+    insights = `Benchmark could not be completed: ${String(error).slice(0, 400)}`;
   }
 
   return NextResponse.json({
-    metrics: metricsData.map((row) => row.financial_metrics),
+    metrics: latestMetrics,
     companies: companiesData,
-    risks: risksData.map((row) => row.risk_flags),
+    risks: risksData,
     insights,
   });
 }

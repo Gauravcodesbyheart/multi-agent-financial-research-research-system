@@ -5,6 +5,7 @@ import {
 import bcrypt from "bcryptjs";
 import { seedCompanies, seedDocumentContent, seedMetrics, seedRisks } from "./seedData";
 import { processDocument } from "./agents/documentAgent";
+import { indexDocumentEmbeddings } from "./agents/embeddingAgent";
 
 export async function seedDatabase() {
   console.log("🌱 Starting database seeding...");
@@ -82,6 +83,7 @@ export async function seedDatabase() {
         summary: `${company.name} FY2023 Annual Report — ${company.sector} sector`,
         isSeeded: true,
         processingStatus: "processing",
+        embeddingStatus: "pending",
       })
       .returning();
 
@@ -91,8 +93,13 @@ export async function seedDatabase() {
     } catch (e) {
       console.warn(`Warning: Document processing for ${company.name}:`, e);
     }
+    try {
+      await indexDocumentEmbeddings(doc.id);
+    } catch (e) {
+      console.warn(`Warning: Embedding index for ${company.name}:`, e);
+    }
 
-    // Insert pre-defined metrics
+    // Insert curated fixture metrics. These are demo baselines, not an Extraction Agent run.
     const metrics = seedMetrics[company.name];
     if (metrics) {
       await db.insert(financialMetrics).values({
@@ -121,7 +128,10 @@ export async function seedDatabase() {
         eps: metrics.eps,
         operatingCashFlow: metrics.operatingCashFlow,
         freeCashFlow: metrics.freeCashFlow,
-        rawMetrics: {},
+        rawMetrics: {
+          source: "curated-seed-fixture",
+          note: "Demo baseline values for UI and tests; verify against original filings before using.",
+        },
       });
     }
 
@@ -157,19 +167,19 @@ export async function seedDatabase() {
     },
     {
       sessionId: demoSession.id,
-      agentName: "Extraction Agent",
-      action: "Extracted metrics from 4 documents",
+      agentName: "Demo Seed Fixture",
+      action: "Loaded curated financial metric baselines",
       status: "completed",
-      details: "Revenue, margins, ratios extracted for AAPL, MSFT, TSLA, AMZN",
-      duration: 5120,
+      details: "Fixture values were loaded for AAPL, MSFT, TSLA, and AMZN; the Extraction Agent was not run during seeding.",
+      duration: 0,
     },
     {
       sessionId: demoSession.id,
-      agentName: "Risk Agent",
-      action: "Completed risk scan on 4 documents",
+      agentName: "Demo Seed Fixture",
+      action: "Loaded curated risk examples",
       status: "completed",
-      details: "Identified 10 risk factors across all companies",
-      duration: 4890,
+      details: "Curated source-backed risk examples were loaded for demonstration; these are not a Red Flag Agent run.",
+      duration: 0,
     },
   ]);
 

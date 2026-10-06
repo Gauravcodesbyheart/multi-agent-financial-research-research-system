@@ -10,10 +10,11 @@ export async function GET() {
       app: "FinResearch AI",
       version: "1.0.0",
       database: "connected",
-      agents: ["Document Agent", "Extraction Agent", "Risk Agent", "Benchmark Agent", "Research Agent"],
+      agents: ["Document Agent", "Extraction Agent", "Risk Agent", "Embedding Agent", "Benchmark Agent", "Research Agent", "Report Agent"],
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    return NextResponse.json({ status: "error", error: String(error) }, { status: 500 });
+    console.error("Health check database query failed:", error);
+    return NextResponse.json({ status: "error", error: "Database connection failed" }, { status: 500 });
   }
 }

@@ -118,8 +118,7 @@ export default function MetricsPage() {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 11 }} />
                   <Tooltip
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    formatter={(value: any) => {
+                    formatter={(value: unknown) => {
                       const num = parseFloat(String(value ?? 0));
                       return activeChart === "margins" ? `${num.toFixed(1)}%` : `${num.toLocaleString()}M`;
                     }}

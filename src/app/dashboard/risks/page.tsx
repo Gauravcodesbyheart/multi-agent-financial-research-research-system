@@ -11,6 +11,7 @@ interface RiskItem {
     title: string;
     description: string;
     sourceText: string | null;
+    pageReference: string | null;
     recommendation: string | null;
     createdAt: string;
   };
@@ -125,7 +126,8 @@ export default function RisksPage() {
 
                   {item.risk.sourceText && (
                     <div className="bg-slate-50 border-l-3 border-slate-300 pl-3 py-2 mb-3 rounded-r-lg">
-                      <p className="text-xs text-slate-500 italic">&quot;{item.risk.sourceText}&quot;</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Source evidence{item.risk.pageReference ? ` · ${item.risk.pageReference}` : ""}</p>
+                      <p className="text-xs text-slate-500 whitespace-pre-wrap">{item.risk.sourceText}</p>
                     </div>
                   )}
 

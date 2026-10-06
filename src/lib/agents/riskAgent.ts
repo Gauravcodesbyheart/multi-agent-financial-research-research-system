@@ -1,123 +1,181 @@
-// Risk Agent — scans for red flags, anomalies, and risk indicators
+// Red Flag Agent — combines quote-grounded document rules with cross-period financial checks.
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { riskFlags, agentLogs } from "@/db/schema";
+import { agentLogs, documents, financialMetrics, riskFlags } from "@/db/schema";
 import { generateJSON } from "./gemini";
+import {
+  dedupeRiskFindings,
+  detectFinancialTrendRisks,
+  detectMetricAnomalies,
+  detectTextualRedFlags,
+  type FinancialSnapshot,
+  type RiskFinding,
+  validateModelRiskItems,
+} from "./analysisUtils";
 
-interface RiskItem {
-  risk_type: string;
-  severity: "critical" | "high" | "medium" | "low";
-  title: string;
-  description: string;
-  source_text?: string;
-  page_reference?: string;
-  recommendation?: string;
+const RISK_SYSTEM = `You are a cautious financial red-flag analyst. Identify only material risks explicitly evidenced in the supplied filing.
+Do not infer facts. Every item must contain one exact source_text quote copied from the document. If no concrete item is supported, return an empty JSON array.`;
+
+function snapshotFromMetric(
+  metric: typeof financialMetrics.$inferSelect | undefined,
+  fileName?: string | null,
+): FinancialSnapshot | null {
+  if (!metric) return null;
+  const rawMetrics = metric.rawMetrics && typeof metric.rawMetrics === "object"
+    ? metric.rawMetrics as Record<string, unknown>
+    : {};
+  const rawEvidence = rawMetrics.metric_evidence && typeof rawMetrics.metric_evidence === "object"
+    ? rawMetrics.metric_evidence as Record<string, unknown>
+    : {};
+  const evidence = (key: string) => typeof rawEvidence[key] === "string" ? rawEvidence[key] as string : undefined;
+
+  return {
+    fiscalYear: metric.fiscalYear,
+    fiscalPeriod: metric.fiscalPeriod,
+    fileName,
+    revenue: metric.revenue,
+    totalDebt: metric.totalDebt,
+    grossMargin: metric.grossMargin,
+    operatingMargin: metric.operatingMargin,
+    netMargin: metric.netMargin,
+    totalAssets: metric.totalAssets,
+    totalLiabilities: metric.totalLiabilities,
+    totalEquity: metric.totalEquity,
+    currentRatio: metric.currentRatio,
+    debtToEquity: metric.debtToEquity,
+    netIncome: metric.netIncome,
+    metricEvidence: {
+      revenue: evidence("revenue"),
+      totalDebt: evidence("total_debt"),
+      grossMargin: evidence("gross_margin"),
+      operatingMargin: evidence("operating_margin"),
+      netMargin: evidence("net_margin"),
+      totalAssets: evidence("total_assets"),
+      totalLiabilities: evidence("total_liabilities"),
+      totalEquity: evidence("total_equity"),
+      currentRatio: evidence("current_ratio"),
+      debtToEquity: evidence("debt_to_equity"),
+      netIncome: evidence("net_income"),
+    },
+  };
 }
 
-const RISK_SYSTEM = `You are an expert financial risk analyst AI specialized in identifying red flags,
-anomalies, and material risks in financial documents including 10-K filings, annual reports,
-and earnings transcripts. You identify: liquidity risks, debt risks, revenue concentration risks,
-margin deterioration, going concern issues, regulatory risks, management risk, and market risks.
-Return only valid JSON — no markdown, no explanation.`;
+async function getCrossPeriodFindings(
+  documentId: string,
+  currentContent: string,
+  companyId?: string,
+): Promise<RiskFinding[]> {
+  const [currentDocument] = await db.select().from(documents).where(eq(documents.id, documentId)).limit(1);
+  const resolvedCompanyId = companyId || currentDocument?.companyId;
+  if (!currentDocument || !resolvedCompanyId) return [];
 
-function findLocalRisks(content: string): RiskItem[] {
-  const checks: Array<{ pattern: RegExp; type: string; title: string; recommendation: string }> = [
-    { pattern: /risk factor|risk factors|uncertaint/i, type: "Market Risk", title: "Documented business risks", recommendation: "Review the cited risk disclosures and monitor changes in exposure." },
-    { pattern: /debt|borrowings|interest expense|leverage/i, type: "Debt Risk", title: "Debt and leverage exposure", recommendation: "Monitor leverage, refinancing needs, and interest coverage." },
-    { pattern: /liquidity|cash flow shortage|working capital/i, type: "Liquidity Risk", title: "Liquidity exposure", recommendation: "Review cash balances, operating cash flow, and near-term obligations." },
-    { pattern: /regulatory|compliance|litigation|legal proceedings/i, type: "Regulatory Risk", title: "Regulatory or legal exposure", recommendation: "Review regulatory disclosures and pending legal matters." },
-    { pattern: /supply chain|supplier concentration|geopolitical/i, type: "Operational Risk", title: "Operational disruption exposure", recommendation: "Assess supplier concentration and business continuity plans." },
-  ];
-  return checks.filter(({ pattern }) => pattern.test(content)).map(({ type, title, recommendation }) => ({
-    risk_type: type,
-    severity: "medium",
-    title,
-    description: "This risk indicator was identified locally because Gemini AI was unavailable. Review the source document for the detailed disclosure.",
-    source_text: content.match(new RegExp(`.{0,80}${checks.find((check) => check.title === title)?.pattern.source}.{0,180}`, "i"))?.[0],
-    recommendation,
-  }));
+  const metricsRows = await db
+    .select({ metric: financialMetrics, document: documents })
+    .from(financialMetrics)
+    .innerJoin(documents, eq(financialMetrics.documentId, documents.id))
+    .where(and(
+      eq(financialMetrics.companyId, resolvedCompanyId),
+      or(eq(documents.userId, currentDocument.userId), eq(documents.isSeeded, true)),
+    ))
+    .orderBy(sql`${financialMetrics.fiscalYear} DESC NULLS LAST`, desc(financialMetrics.extractedAt));
+
+  const currentRow = metricsRows.find((row) => row.metric.documentId === documentId);
+  if (!currentRow) return [];
+  const currentYear = currentRow.metric.fiscalYear;
+  const previousRow = metricsRows.find((row) =>
+    row.metric.documentId !== documentId &&
+    row.metric.fiscalYear !== null &&
+    currentYear !== null &&
+    row.metric.fiscalYear < currentYear,
+  );
+  if (!previousRow) return [];
+
+  const currentSnapshot = snapshotFromMetric(currentRow.metric, currentRow.document.fileName);
+  const previousSnapshot = snapshotFromMetric(previousRow.metric, previousRow.document.fileName);
+  if (!currentSnapshot || !previousSnapshot) return [];
+
+  return detectFinancialTrendRisks(
+    previousSnapshot,
+    currentSnapshot,
+    previousRow.document.content || "",
+    currentContent,
+  );
 }
 
 export async function scanForRisks(
   documentId: string,
   content: string,
-  companyId?: string
+  companyId?: string,
 ): Promise<void> {
-  const start = Date.now();
-
+  const startedAt = Date.now();
   await db.insert(agentLogs).values({
     documentId,
-    agentName: "Risk Agent",
-    action: "Starting risk scan",
+    agentName: "Red Flag Agent",
+    action: "Starting red-flag scan",
     status: "running",
-    details: "Scanning document for red flags and anomalies...",
+    details: "Checking audit/going-concern disclosures, accounting signals, metric anomalies, and cross-period changes.",
   });
 
   try {
-    const excerpt = content.slice(0, 10000);
+    const [currentMetric] = await db.select().from(financialMetrics)
+      .where(eq(financialMetrics.documentId, documentId))
+      .orderBy(desc(financialMetrics.extractedAt))
+      .limit(1);
 
-    const prompt = `Analyze this financial document for risks, red flags, and anomalies:
+    const deterministicFindings: RiskFinding[] = [
+      ...detectTextualRedFlags(content),
+      ...detectMetricAnomalies(snapshotFromMetric(currentMetric) || {}, content),
+      ...await getCrossPeriodFindings(documentId, content, companyId),
+    ];
 
-${excerpt}
+    let validatedModelFindings: RiskFinding[] = [];
+    let modelStatus = "Gemini not configured; deterministic checks used.";
+    try {
+      const prompt = `Review this financial document for additional material risks not already covered by deterministic checks.
+Return a JSON array with fields risk_type, severity (critical/high/medium/low), title, description, source_text (an exact quote of at least 12 characters copied from this document), and recommendation.
+Do not fabricate a quote. Return [] if there are no additional supported findings.
 
-Return a JSON array of risk items found. Each item must follow this structure:
-{
-  "risk_type": <one of: "Liquidity Risk", "Debt Risk", "Revenue Risk", "Margin Risk", "Regulatory Risk", "Management Risk", "Market Risk", "Going Concern", "Concentration Risk", "Operational Risk">,
-  "severity": <"critical" | "high" | "medium" | "low">,
-  "title": <short title of the risk, max 100 chars>,
-  "description": <detailed description of the risk, 2-4 sentences>,
-  "source_text": <exact quote from the document supporting this risk>,
-  "recommendation": <actionable recommendation for addressing this risk>
-}
-
-Return between 3-8 risk items as a JSON array: []`;
-
-    const risks = await generateJSON<RiskItem[]>(prompt, RISK_SYSTEM);
-
-    if (Array.isArray(risks) && risks.length > 0) {
-      const riskValues = risks.map((risk) => ({
-        documentId,
-        companyId: companyId || null,
-        riskType: risk.risk_type || "Unknown",
-        severity: risk.severity || "medium",
-        title: risk.title || "Unknown Risk",
-        description: risk.description || "",
-        sourceText: risk.source_text || null,
-        pageReference: risk.page_reference || null,
-        recommendation: risk.recommendation || null,
-      }));
-
-      await db.insert(riskFlags).values(riskValues);
+DOCUMENT TEXT:\n${content.length <= 30000 ? content : `${content.slice(0, 15000)}\n[Middle omitted]\n${content.slice(-15000)}`}`;
+      const modelItems = await generateJSON<unknown>(prompt, RISK_SYSTEM);
+      validatedModelFindings = validateModelRiskItems(modelItems, content);
+      modelStatus = `Validated ${validatedModelFindings.length} additional model findings against source quotes.`;
+    } catch (error) {
+      modelStatus = `Gemini unavailable; deterministic checks used. ${String(error).slice(0, 300)}`;
     }
 
-    await db.insert(agentLogs).values({
-      documentId,
-      agentName: "Risk Agent",
-      action: "Risk scan complete",
-      status: "completed",
-      details: `Identified ${Array.isArray(risks) ? risks.length : 0} risk factors`,
-      duration: Date.now() - start,
-    });
-  } catch (error) {
-    const fallbackRisks = findLocalRisks(content);
-    if (fallbackRisks.length > 0) {
-      await db.insert(riskFlags).values(fallbackRisks.map((risk) => ({
+    const findings = dedupeRiskFindings([...deterministicFindings, ...validatedModelFindings]);
+    await db.delete(riskFlags).where(eq(riskFlags.documentId, documentId));
+    if (findings.length > 0) {
+      await db.insert(riskFlags).values(findings.map((risk) => ({
         documentId,
         companyId: companyId || null,
         riskType: risk.risk_type,
         severity: risk.severity,
         title: risk.title,
         description: risk.description,
-        sourceText: risk.source_text || null,
+        sourceText: risk.source_text,
+        pageReference: risk.page_reference || null,
         recommendation: risk.recommendation || null,
       })));
     }
+
     await db.insert(agentLogs).values({
       documentId,
-      agentName: "Risk Agent",
-      action: "Risk scan completed with local fallback",
+      agentName: "Red Flag Agent",
+      action: "Red-flag scan complete",
       status: "completed",
-      details: `Gemini unavailable; identified ${fallbackRisks.length} local risk indicators`,
-      duration: Date.now() - start,
+      details: `Persisted ${findings.length} evidence-backed findings. ${modelStatus}`,
+      duration: Date.now() - startedAt,
     });
+  } catch (error) {
+    await db.insert(agentLogs).values({
+      documentId,
+      agentName: "Red Flag Agent",
+      action: "Red-flag scan failed",
+      status: "failed",
+      details: String(error).slice(0, 1000),
+      duration: Date.now() - startedAt,
+    });
+    throw error;
   }
 }
