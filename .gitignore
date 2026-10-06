@@ -65,3 +65,4 @@ coverage/
 service-account*.json
 credentials*.json
 *-service-account*.json
+*.dump
