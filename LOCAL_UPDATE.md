@@ -15,6 +15,28 @@ ones you already have, so there is nothing new to migrate on an existing databas
 
 ---
 
+## The fast way (recommended)
+
+Once you have pulled this branch, one script does the whole update — it fetches the
+code, installs dependencies, creates `.env` from the example if it is missing, tells
+you which values still need filling in, and runs the setup doctor:
+
+```bash
+# macOS / Linux
+./scripts/update-local.sh
+```
+
+```powershell
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File .\scripts\update-local.ps1
+```
+
+Add `--migrate` (bash) or `-Migrate` (PowerShell) to also apply database migrations.
+
+The manual steps are below if you prefer to run them yourself.
+
+---
+
 ## 1. What you need installed
 
 * **Node.js 20.9 or newer** (`node -v`)
