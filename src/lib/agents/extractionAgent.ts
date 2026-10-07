@@ -2,7 +2,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { agentLogs, documents, financialMetrics } from "@/db/schema";
-import { generateJSON } from "./gemini";
+import { generateJSON } from "./llm";
 import {
   extractMetricsLocally,
   mergeWithLocalMetrics,
@@ -34,7 +34,7 @@ async function saveMetrics(documentId: string, companyId: string | undefined, ex
   const [doc] = await db.select().from(documents).where(eq(documents.id, documentId)).limit(1);
   const rawMetrics = {
     ...(extracted.raw_metrics || {}),
-    extraction_method: extracted.raw_metrics?.extraction_method || "gemini-with-quote-validation-and-local-fill",
+    extraction_method: extracted.raw_metrics?.extraction_method || "ai-with-quote-validation-and-local-fill",
     metric_evidence: extracted.metric_evidence || {},
   };
   const metricValues = {
@@ -96,7 +96,7 @@ export async function extractFinancialMetrics(
   });
 
   let extracted: ExtractedMetrics;
-  let extractionMethod = "gemini-verified";
+  let extractionMethod = "ai-verified";
   try {
     const relevantText = content.length <= 30000
       ? content
@@ -145,7 +145,7 @@ DOCUMENT TEXT:\n${relevantText}`;
     extracted = mergeWithLocalMetrics(verified, extractMetricsLocally(content)) as ExtractedMetrics;
     extracted.raw_metrics = {
       ...(modelOutput.raw_metrics || {}),
-      extraction_method: "gemini-with-evidence-validation",
+      extraction_method: "ai-with-evidence-validation",
     };
   } catch (error) {
     extractionMethod = "local-evidence-parser";
@@ -162,7 +162,7 @@ DOCUMENT TEXT:\n${relevantText}`;
     documentId,
     agentName: "Extraction Agent",
     action: "Metric extraction complete",
-    status: extractionMethod === "gemini-verified" ? "completed" : "partial",
+    status: extractionMethod === "ai-verified" ? "completed" : "partial",
     details: `Stored ${metricCount(extracted)} evidence-backed fields using ${extractionMethod}.`,
     duration: Date.now() - startedAt,
   });

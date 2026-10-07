@@ -24,7 +24,8 @@ export type FinancialMetricKey =
   | "totalEquity"
   | "currentRatio"
   | "debtToEquity"
-  | "netIncome";
+  | "netIncome"
+  | "operatingCashFlow";
 
 export interface FinancialSnapshot {
   fiscalYear?: number | null;
@@ -41,12 +42,28 @@ export interface FinancialSnapshot {
   currentRatio?: NumericValue;
   debtToEquity?: NumericValue;
   netIncome?: NumericValue;
+  operatingCashFlow?: NumericValue;
   metricEvidence?: Partial<Record<FinancialMetricKey, string>>;
 }
 
+/** Conservative screening thresholds; tune by sector before treating these as policy. */
+export const RED_FLAG_THRESHOLDS = Object.freeze({
+  debtIncreasePercent: 0.15,
+  debtIncreaseMillions: 1,
+  marginDecline: 0.03,
+  revenueDeclinePercent: 0.15,
+  severeRevenueDeclinePercent: 0.30,
+  severeMarginDeclinePoints: 10,
+  balanceSheetMismatchPercent: 0.10,
+  highDebtToEquity: 5,
+  lowCurrentRatio: 1,
+  outlierCurrentRatio: 20,
+  weakOperatingCashFlowToNetIncome: 0.50,
+});
+
 const METRIC_LABELS: Record<FinancialMetricKey, RegExp> = {
   revenue: /\b(?:total\s+revenue|total\s+revenues|total\s+net\s+sales|net\s+sales|revenue)\b/i,
-  totalDebt: /\b(?:total\s+debt|long[- ]term\s+debt|short[- ]term\s+debt|borrowings)\b/i,
+  totalDebt: /\b(?:total\s+debt|total\s+borrowings|aggregate\s+debt)\b/i,
   grossMargin: /\bgross\s+margin\b/i,
   operatingMargin: /\boperating\s+margin\b/i,
   netMargin: /\bnet\s+margin\b/i,
@@ -56,6 +73,7 @@ const METRIC_LABELS: Record<FinancialMetricKey, RegExp> = {
   currentRatio: /\bcurrent\s+ratio\b/i,
   debtToEquity: /\bdebt[- ]to[- ]equity(?:\s+ratio)?\b/i,
   netIncome: /\bnet\s+income\b/i,
+  operatingCashFlow: /\boperating\s+cash\s+flow\b/i,
 };
 
 const EXTRACTION_METRIC_KEYS: Record<FinancialMetricKey, string> = {
@@ -70,6 +88,7 @@ const EXTRACTION_METRIC_KEYS: Record<FinancialMetricKey, string> = {
   currentRatio: "current_ratio",
   debtToEquity: "debt_to_equity",
   netIncome: "net_income",
+  operatingCashFlow: "operating_cash_flow",
 };
 
 export function toFiniteNumber(value: NumericValue): number | null {
@@ -95,16 +114,38 @@ export function hasGroundedEvidence(documentText: string, evidence: string): boo
   return normalizedEvidence.length >= 12 && normalizeEvidence(documentText).includes(normalizedEvidence);
 }
 
-function excerptAroundMatch(content: string, match: RegExp): string | undefined {
-  const found = match.exec(content);
-  if (!found || found.index === undefined) return undefined;
-  const lineStart = content.lastIndexOf("\n", found.index) + 1;
-  const lineEndIndex = content.indexOf("\n", found.index + found[0].length);
+function excerptAt(content: string, matchIndex: number, matchLength: number): string | undefined {
+  const lineStart = content.lastIndexOf("\n", matchIndex) + 1;
+  const lineEndIndex = content.indexOf("\n", matchIndex + matchLength);
   const lineEnd = lineEndIndex === -1 ? content.length : lineEndIndex;
   const line = content.slice(lineStart, lineEnd).trim();
   if (line.length <= 700) return line || undefined;
-  const localStart = Math.max(0, found.index - lineStart - 250);
+  const localStart = Math.max(0, matchIndex - lineStart - 250);
   return line.slice(localStart, localStart + 500).trim();
+}
+
+function excerptAroundMatch(content: string, match: RegExp): string | undefined {
+  const found = match.exec(content);
+  if (!found || found.index === undefined) return undefined;
+  return excerptAt(content, found.index, found[0].length);
+}
+
+function isNegatedDisclosure(content: string, matchIndex: number, matchText = ""): boolean {
+  const boundary = Math.max(
+    content.lastIndexOf("\n", matchIndex),
+    content.lastIndexOf(".", matchIndex),
+    content.lastIndexOf(";", matchIndex),
+    content.lastIndexOf("!", matchIndex),
+    content.lastIndexOf("?", matchIndex),
+  );
+  const prefix = content.slice(Math.max(boundary + 1, matchIndex - 140), matchIndex);
+  const suffix = content.slice(matchIndex + matchText.length, matchIndex + matchText.length + 100).split(/[.!?;\n]/, 1)[0];
+  const negatedPrefix = /\b(?:no|not|without|never|neither|deny|denies|denied|absence\s+of|no\s+evidence\s+of)\b[^.!?;]{0,120}$/i.test(prefix);
+  const negatedInMatch = /\b(?:no|not|without|never|neither|did\s+not|does\s+not|has\s+not)\b/i.test(matchText) &&
+    !/\bnot\s+only\b/i.test(matchText);
+  const negatedSuffix = /^\s*(?:(?:has|have|had|is|are|was|were|did|does|do|could|would|should)\s+)?(?:not|never|cannot|can't|isn't|aren't|wasn't|weren't|hasn't|haven't|didn't|doesn't|don't)\b/i.test(suffix);
+  const negatedInSuffix = /\b(?:ruled\s+out|excluded|absent)\b/i.test(suffix);
+  return (negatedPrefix && !/\bnot\s+only\b/i.test(prefix)) || negatedInMatch || negatedSuffix || negatedInSuffix;
 }
 
 export function findMetricEvidenceLine(
@@ -157,19 +198,32 @@ export function detectTextualRedFlags(content: string): RiskFinding[] {
       description: "The document contains explicit language about a covenant breach, debt default, liquidity shortfall, or inability to meet obligations.",
       recommendation: "Review maturity schedules, covenant headroom, available facilities, and management's remediation plan.",
     },
+    {
+      pattern: /\b(?:auditor|independent auditor|accounting firm)\b[^.!?\n]{0,100}\b(?:resign(?:ed|ation)?|dismiss(?:ed|al)?|withdraw(?:n|al)|discharg(?:ed|e))\b/i,
+      riskType: "Auditor Qualification",
+      severity: "high",
+      title: "Auditor departure or withdrawal disclosed",
+      description: "The source describes an auditor resignation, dismissal, or withdrawal. Review the stated reasons and any unresolved accounting matters.",
+      recommendation: "Review the auditor-change disclosure, regulator correspondence, and the successor auditor's opening-balance procedures.",
+    },
   ];
 
   return checks.flatMap((check) => {
-    const source = excerptAroundMatch(content, check.pattern);
-    if (!source) return [];
-    return [{
-      risk_type: check.riskType,
-      severity: check.severity,
-      title: check.title,
-      description: check.description,
-      source_text: source,
-      recommendation: check.recommendation,
-    }];
+    const matcher = new RegExp(check.pattern.source, `${check.pattern.flags.replace(/g/g, "")}g`);
+    for (const match of content.matchAll(matcher)) {
+      if (match.index === undefined || isNegatedDisclosure(content, match.index, match[0])) continue;
+      const source = excerptAt(content, match.index, match[0].length);
+      if (!source) continue;
+      return [{
+        risk_type: check.riskType,
+        severity: check.severity,
+        title: check.title,
+        description: check.description,
+        source_text: source,
+        recommendation: check.recommendation,
+      }];
+    }
+    return [];
   });
 }
 
@@ -210,7 +264,7 @@ function createTrendFinding(
 
   if (metric === "totalDebt" && before > 0) {
     const percentIncrease = (after - before) / before;
-    if (percentIncrease >= 0.15 && after - before >= 1) {
+    if (percentIncrease >= RED_FLAG_THRESHOLDS.debtIncreasePercent && after - before >= RED_FLAG_THRESHOLDS.debtIncreaseMillions) {
       return {
         risk_type: "Debt Risk",
         severity: percentIncrease >= 0.5 ? "high" : "medium",
@@ -222,12 +276,12 @@ function createTrendFinding(
     }
   }
 
-  if (["grossMargin", "operatingMargin", "netMargin"].includes(metric) && before - after >= 0.03) {
+  if (["grossMargin", "operatingMargin", "netMargin"].includes(metric) && before - after >= RED_FLAG_THRESHOLDS.marginDecline) {
     const label = metric === "grossMargin" ? "gross" : metric === "operatingMargin" ? "operating" : "net";
     const pointChange = (before - after) * 100;
     return {
       risk_type: "Margin Risk",
-      severity: pointChange >= 10 ? "high" : "medium",
+      severity: pointChange >= RED_FLAG_THRESHOLDS.severeMarginDeclinePoints ? "high" : "medium",
       title: `${label[0].toUpperCase()}${label.slice(1)} margin fell ${pointChange.toFixed(1)} percentage points`,
       description: `The extracted ${label} margin declined from ${(before * 100).toFixed(1)}% to ${(after * 100).toFixed(1)}% between the cited periods. Review the source disclosures for the causes and any one-off items.`,
       source_text: sourceText,
@@ -235,11 +289,11 @@ function createTrendFinding(
     };
   }
 
-  if (metric === "revenue" && before > 0 && (before - after) / before >= 0.15) {
+  if (metric === "revenue" && before > 0 && (before - after) / before >= RED_FLAG_THRESHOLDS.revenueDeclinePercent) {
     const decline = (before - after) / before;
     return {
       risk_type: "Revenue Risk",
-      severity: decline >= 0.3 ? "high" : "medium",
+      severity: decline >= RED_FLAG_THRESHOLDS.severeRevenueDeclinePercent ? "high" : "medium",
       title: `Revenue declined ${Math.round(decline * 100)}% year over year`,
       description: `Extracted revenue declined from ${before.toLocaleString()} to ${after.toLocaleString()} million between the cited periods.`,
       source_text: sourceText,
@@ -272,10 +326,13 @@ export function detectMetricAnomalies(snapshot: FinancialSnapshot, content: stri
   const equity = toFiniteNumber(snapshot.totalEquity);
   const debtToEquity = toFiniteNumber(snapshot.debtToEquity);
   const currentRatio = toFiniteNumber(snapshot.currentRatio);
+  const netIncome = toFiniteNumber(snapshot.netIncome);
+  const operatingCashFlow = toFiniteNumber(snapshot.operatingCashFlow);
+  const addFinding = (finding: RiskFinding | undefined) => { if (finding) findings.push(finding); };
 
   if (equity !== null && equity < 0) {
     const evidence = metricEvidence(snapshot, "totalEquity", content);
-    if (evidence) findings.push({
+    if (evidence) addFinding({
       risk_type: "Balance Sheet Risk",
       severity: "high",
       title: "Negative shareholders' equity reported",
@@ -292,38 +349,77 @@ export function detectMetricAnomalies(snapshot: FinancialSnapshot, content: stri
       metricEvidence(snapshot, "totalLiabilities", content),
       metricEvidence(snapshot, "totalEquity", content),
     ];
-    const evidence = evidenceLines.join("\n");
-    if (mismatch > 0.1 && evidenceLines.every(Boolean)) findings.push({
+    if (mismatch > RED_FLAG_THRESHOLDS.balanceSheetMismatchPercent && evidenceLines.every(Boolean)) addFinding({
       risk_type: "Financial Anomaly",
       severity: "medium",
       title: "Balance-sheet totals do not reconcile",
       description: `Extracted total assets differ from total liabilities plus equity by ${(mismatch * 100).toFixed(1)}%. This may reflect incomplete extraction, differing definitions, or a reporting anomaly and must be checked against the filing.`,
-      source_text: evidence,
+      source_text: evidenceLines.join("\n"),
       recommendation: "Verify all three values and their units against the same balance-sheet date in the original filing.",
     });
   }
 
-  if (debtToEquity !== null && debtToEquity > 5) {
+  if (debtToEquity !== null && debtToEquity > RED_FLAG_THRESHOLDS.highDebtToEquity) {
     const evidence = metricEvidence(snapshot, "debtToEquity", content);
-    if (evidence) findings.push({
+    if (evidence) addFinding({
       risk_type: "Debt Risk",
       severity: "high",
       title: "Unusually high debt-to-equity ratio",
-      description: `The extracted debt-to-equity ratio is ${debtToEquity}. This threshold is a screening signal and should be interpreted in the company's industry and capital structure context.`,
+      description: `The extracted debt-to-equity ratio is ${debtToEquity}. This screening threshold is not industry-adjusted and must be reviewed in context.`,
       source_text: evidence,
       recommendation: "Confirm the ratio definition and review debt maturity, interest coverage, and peer context.",
     });
   }
 
-  if (currentRatio !== null && currentRatio > 20) {
+  if (currentRatio !== null && currentRatio < RED_FLAG_THRESHOLDS.lowCurrentRatio) {
     const evidence = metricEvidence(snapshot, "currentRatio", content);
-    if (evidence) findings.push({
+    if (evidence) addFinding({
+      risk_type: "Liquidity Risk",
+      severity: "medium",
+      title: "Current ratio is below 1.0",
+      description: `The extracted current ratio is ${currentRatio.toFixed(2)}. This screening signal indicates current liabilities may exceed current assets; it is not a standalone solvency conclusion.`,
+      source_text: evidence,
+      recommendation: "Review working-capital composition, operating cash flows, credit facilities, and near-term maturities.",
+    });
+  } else if (currentRatio !== null && currentRatio > RED_FLAG_THRESHOLDS.outlierCurrentRatio) {
+    const evidence = metricEvidence(snapshot, "currentRatio", content);
+    if (evidence) addFinding({
       risk_type: "Financial Anomaly",
       severity: "low",
       title: "Current ratio is an outlier; verify units and extraction",
-      description: `The extracted current ratio is ${currentRatio}, which is unusually high for a screening threshold and may be a data or unit issue.`,
+      description: `The extracted current ratio is ${currentRatio}, which is unusually high for this screening threshold and may indicate a data or unit issue.`,
       source_text: evidence,
       recommendation: "Verify current assets and current liabilities in the source filing before interpreting this value.",
+    });
+  }
+
+  if (netIncome !== null && operatingCashFlow !== null && netIncome > 0 &&
+    operatingCashFlow < 0) {
+    const evidenceLines = [
+      metricEvidence(snapshot, "netIncome", content),
+      metricEvidence(snapshot, "operatingCashFlow", content),
+    ];
+    if (evidenceLines.every(Boolean)) addFinding({
+      risk_type: "Earnings Quality Risk",
+      severity: "high",
+      title: "Positive net income but negative operating cash flow",
+      description: "The extracted figures show positive net income alongside negative operating cash flow. This divergence merits review but can arise from working-capital timing or non-cash items.",
+      source_text: evidenceLines.join("\n"),
+      recommendation: "Reconcile net income to operating cash flow and review working-capital movements and non-cash adjustments.",
+    });
+  } else if (netIncome !== null && operatingCashFlow !== null && netIncome > 0 &&
+    operatingCashFlow >= 0 && operatingCashFlow / netIncome < RED_FLAG_THRESHOLDS.weakOperatingCashFlowToNetIncome) {
+    const evidenceLines = [
+      metricEvidence(snapshot, "netIncome", content),
+      metricEvidence(snapshot, "operatingCashFlow", content),
+    ];
+    if (evidenceLines.every(Boolean)) addFinding({
+      risk_type: "Earnings Quality Risk",
+      severity: "medium",
+      title: "Operating cash flow is low relative to net income",
+      description: `Extracted operating cash flow is less than ${(RED_FLAG_THRESHOLDS.weakOperatingCashFlowToNetIncome * 100).toFixed(0)}% of net income. Review cash conversion and one-off timing items.`,
+      source_text: evidenceLines.join("\n"),
+      recommendation: "Compare cash conversion over multiple periods and inspect working-capital movements.",
     });
   }
 
@@ -332,16 +428,20 @@ export function detectMetricAnomalies(snapshot: FinancialSnapshot, content: stri
 
 /** Keep only model findings whose claimed quotation is present in the supplied source document. */
 export function validateModelRiskItems(rawItems: unknown, documentText: string): RiskFinding[] {
-  if (!Array.isArray(rawItems)) return [];
+  const items = Array.isArray(rawItems)
+    ? rawItems
+    : rawItems && typeof rawItems === "object" && Array.isArray((rawItems as { findings?: unknown }).findings)
+      ? (rawItems as { findings: unknown[] }).findings
+      : [];
   const allowedSeverities = new Set<Severity>(["critical", "high", "medium", "low"]);
   const allowedTypes = new Set([
     "Liquidity Risk", "Debt Risk", "Revenue Risk", "Margin Risk", "Regulatory Risk",
     "Management Risk", "Market Risk", "Going Concern", "Concentration Risk",
-    "Operational Risk", "Accounting Control Risk", "Auditor Qualification",
+    "Operational Risk", "Accounting Control Risk", "Auditor Qualification", "Earnings Quality Risk",
     "Financial Anomaly", "Balance Sheet Risk",
   ]);
 
-  return rawItems.flatMap((entry): RiskFinding[] => {
+  return items.flatMap((entry): RiskFinding[] => {
     if (!entry || typeof entry !== "object") return [];
     const item = entry as Record<string, unknown>;
     const source = typeof item.source_text === "string" ? item.source_text.trim() : "";
@@ -398,7 +498,7 @@ export function keywordRelevance(query: string, text: string): number {
   return matched / terms.length;
 }
 
-/** Split explicit multi-part questions into separate retrieval steps without splitting normal phrases. */
+/** Split numbered/explicit and finance-topic compound questions into focused retrieval steps. */
 export function decomposeResearchQuestion(question: string, maxSteps = 4): string[] {
   const normalized = question.trim();
   if (!normalized) return [];
@@ -415,8 +515,23 @@ export function decomposeResearchQuestion(question: string, maxSteps = 4): strin
     .filter(Boolean);
   if (questionParts.length > 1) return questionParts.slice(0, maxSteps);
 
-  const compound = normalized.split(/\s+and\s+(?=(?:also\s+)?(?:what|how|why|which|identify|compare|calculate|explain|list|show|summarize)\b)/i);
-  if (compound.length > 1) return compound.map((part) => part.trim()).filter(Boolean).slice(0, maxSteps);
+  const financeTopic = /\b(?:revenue|revenues|sales|growth|margins?|profits?|income|cash|debt|liabilit(?:y|ies)|assets?|equity|earnings|eps|ratios?|audit(?:or)?|going concern|risk|liquidity|capital expenditures?|free cash flow)\b/i;
+  const command = /\b(?:what|how|why|which|identify|compare|calculate|explain|list|show|summarize|analy[sz]e)\b/i;
+  const conjunctiveParts = normalized
+    .split(/\s+(?:and also|and|as well as|plus)\s+/i)
+    .map((part) => part.replace(/^[,;\s]+|[,;\s]+$/g, "").trim())
+    .filter(Boolean);
+  if (conjunctiveParts.length > 1 && conjunctiveParts.length <= maxSteps &&
+    conjunctiveParts.every((part) => financeTopic.test(part) || command.test(part)) &&
+    conjunctiveParts.some((part) => command.test(part))) {
+    return conjunctiveParts;
+  }
+
+  const commandParts = normalized
+    .split(/\s+and\s+(?=(?:also\s+)?(?:what|how|why|which|identify|compare|calculate|explain|list|show|summarize)\b)/i)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (commandParts.length > 1) return commandParts.slice(0, maxSteps);
   return [normalized];
 }
 
@@ -496,24 +611,27 @@ function numericTokens(text: string): string[] {
 }
 
 /**
- * Validate structured Research Agent output. Every displayed claim must cite at least
- * one retrieved source ID and include an exact supporting quote from that citation.
- * Numeric tokens must also occur in the quoted source text; unsupported claims are dropped.
+ * Validate Research Agent output conservatively: every rendered factual sentence must
+ * itself be a verbatim contiguous quote from a retrieved source excerpt. Numeric tokens
+ * are checked as an extra guard. The model cannot add unsupported paraphrase.
  */
 export function validateGroundedResearchAnswer(
   raw: unknown,
   availableEvidence: CitationEvidence[],
+  expectedQuestions?: string[],
 ): GroundedResearchAnswer | null {
   if (!raw || typeof raw !== "object" || !Array.isArray((raw as Record<string, unknown>).steps)) return null;
   const evidenceById = new Map(availableEvidence.map((item) => [item.citationId, item.excerpt]));
   const usedIds = new Set<string>();
   const answerLines: string[] = [];
-  const steps = (raw as { steps: unknown[] }).steps;
+  const rawSteps = (raw as { steps: unknown[] }).steps;
+  const stepCount = expectedQuestions ? expectedQuestions.length : rawSteps.length;
 
-  for (const rawStep of steps) {
-    if (!rawStep || typeof rawStep !== "object") continue;
-    const step = rawStep as Record<string, unknown>;
-    const question = typeof step.question === "string" ? step.question.trim().replace(/\s+/g, " ") : "";
+  for (let stepIndex = 0; stepIndex < stepCount; stepIndex += 1) {
+    const rawStep = rawSteps[stepIndex];
+    const step = rawStep && typeof rawStep === "object" ? rawStep as Record<string, unknown> : {};
+    const question = expectedQuestions?.[stepIndex] ||
+      (typeof step.question === "string" ? step.question.trim().replace(/\s+/g, " ") : "");
     const isUnsupported = step.not_supported === true || step.unsupported === true;
     if (isUnsupported) {
       if (question) answerLines.push(`**${question}**\nThe retrieved source passages do not support an answer to this part.`);
@@ -532,12 +650,16 @@ export function validateGroundedResearchAnswer(
       const quotes = claim.supporting_quotes && typeof claim.supporting_quotes === "object"
         ? claim.supporting_quotes as Record<string, unknown>
         : {};
-      if (!text || ids.length === 0) continue;
+      if (text.length < 12 || ids.length === 0) continue;
 
       const groundedIds = ids.filter((id) => {
         const sourceExcerpt = evidenceById.get(id);
         const quote = quotes[id];
-        return Boolean(sourceExcerpt && typeof quote === "string" && hasGroundedEvidence(sourceExcerpt, quote));
+        return Boolean(
+          sourceExcerpt && typeof quote === "string" &&
+          hasGroundedEvidence(sourceExcerpt, quote) &&
+          hasGroundedEvidence(quote, text)
+        );
       });
       if (groundedIds.length === 0) continue;
 
@@ -546,7 +668,7 @@ export function validateGroundedResearchAnswer(
       if (numericTokens(text).some((number) => !quoteNumbers.has(number))) continue;
 
       groundedIds.forEach((id) => usedIds.add(id));
-      accepted.push(`${text} ${groundedIds.map((id) => `[${id}]`).join(" ")}`);
+      accepted.push(`“${text}” ${groundedIds.map((id) => `[${id}]`).join(" ")}`);
     }
 
     if (question) answerLines.push(`**${question}**`);

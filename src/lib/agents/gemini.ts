@@ -3,7 +3,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 let genAI: GoogleGenerativeAI | null = null;
 
 export const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
-export const DEFAULT_GEMINI_PRO_MODEL = process.env.GEMINI_PRO_MODEL || "gemini-3.6-flash";
 const MAX_RETRIES = 3;
 
 function isTransientGeminiError(error: unknown): boolean {

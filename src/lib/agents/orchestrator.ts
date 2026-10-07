@@ -22,19 +22,65 @@ export interface DocumentJobResult {
 const MAX_JOB_BATCH_SIZE = 5;
 const STALE_JOB_LOCK_MS = 15 * 60 * 1000;
 
-/** Run processing stages in order. Extraction/risk errors do not prevent later stages. */
+export function computeDocumentRetryAt(attempts: number, maxAttempts: number, now = new Date()): Date | null {
+  if (attempts >= maxAttempts) return null;
+  const backoffMs = Math.min(30_000 * (2 ** Math.max(0, attempts - 1)), 5 * 60_000);
+  return new Date(now.getTime() + backoffMs);
+}
+
+export interface DocumentPipelineStages {
+  document(): Promise<void>;
+  extraction(): Promise<void>;
+  redFlags(): Promise<void>;
+  embeddings?(): Promise<void>;
+}
+
+/** Pure, injectable sequential runner; optional embedding failures do not block lexical RAG. */
+export async function executeDocumentStages(stages: DocumentPipelineStages): Promise<PipelineResult> {
+  try {
+    await stages.document();
+  } catch (error) {
+    return { status: "failed", failures: [`Document indexing failed: ${String(error).slice(0, 1000)}`] };
+  }
+
+  const failures: string[] = [];
+  for (const [stageName, run] of [
+    ["Extraction Agent", stages.extraction],
+    ["Red Flag Agent", stages.redFlags],
+  ] as const) {
+    try {
+      await run();
+    } catch (error) {
+      failures.push(`${stageName}: ${String(error).slice(0, 400)}`);
+    }
+  }
+
+  if (stages.embeddings) {
+    try {
+      await stages.embeddings();
+    } catch (error) {
+      console.warn("Embedding indexing failed; lexical retrieval will remain enabled:", error);
+    }
+  }
+
+  return { status: failures.length ? "partial" : "completed", failures };
+}
+
+/** Run Document → Extraction → Red Flag sequentially for every uploaded file. */
 export async function runDocumentPipeline(
   documentId: string,
   content: string,
   companyId?: string,
 ): Promise<PipelineResult> {
   const startedAt = Date.now();
-  const failures: string[] = [];
+  const result = await executeDocumentStages({
+    document: () => processDocument(documentId, content),
+    extraction: () => extractFinancialMetrics(documentId, content, companyId),
+    redFlags: () => scanForRisks(documentId, content, companyId),
+    embeddings: () => indexDocumentEmbeddings(documentId).then(() => undefined),
+  });
 
-  try {
-    await processDocument(documentId, content);
-  } catch (error) {
-    const detail = `Document indexing failed: ${String(error).slice(0, 1000)}`;
+  if (result.status === "failed") {
     await db.update(documents)
       .set({ processingStatus: "failed", updatedAt: new Date() })
       .where(eq(documents.id, documentId));
@@ -43,44 +89,26 @@ export async function runDocumentPipeline(
       agentName: "Pipeline Orchestrator",
       action: "Document pipeline stopped",
       status: "failed",
-      details: detail,
+      details: result.failures.join("; "),
       duration: Date.now() - startedAt,
     });
-    return { status: "failed", failures: [detail] };
+    return result;
   }
 
-  try {
-    await extractFinancialMetrics(documentId, content, companyId);
-  } catch (error) {
-    failures.push(`Extraction Agent: ${String(error).slice(0, 400)}`);
-  }
-
-  try {
-    await scanForRisks(documentId, content, companyId);
-  } catch (error) {
-    failures.push(`Red Flag Agent: ${String(error).slice(0, 400)}`);
-  }
-
-  try {
-    await indexDocumentEmbeddings(documentId);
-  } catch (error) {
-    // Embeddings are optional; keyword retrieval remains available when this fails.
-    console.warn("Embedding indexing failed; lexical retrieval will remain enabled:", error);
-  }
-
-  const status = failures.length > 0 ? "partial" : "completed";
   await db.update(documents)
-    .set({ processingStatus: status, updatedAt: new Date() })
+    .set({ processingStatus: result.status, updatedAt: new Date() })
     .where(eq(documents.id, documentId));
   await db.insert(agentLogs).values({
     documentId,
     agentName: "Pipeline Orchestrator",
-    action: `Document pipeline ${status}`,
-    status: status === "completed" ? "completed" : "partial",
-    details: failures.length ? failures.join("; ") : "Document, extraction, red-flag, and optional embedding stages finished.",
+    action: `Document pipeline ${result.status}`,
+    status: result.status === "completed" ? "completed" : "partial",
+    details: result.failures.length
+      ? result.failures.join("; ")
+      : "Document, extraction, red-flag, and optional embedding stages finished in order.",
     duration: Date.now() - startedAt,
   });
-  return { status, failures };
+  return result;
 }
 
 /**
@@ -171,9 +199,8 @@ export async function processDocumentJob(jobId: string): Promise<DocumentJobResu
   }
 
   const error = result.failures.join("; ").slice(0, 2000) || `Pipeline ended with ${result.status} status`;
-  if (job.attempts < job.maxAttempts) {
-    const backoffMs = Math.min(30_000 * (2 ** Math.max(0, job.attempts - 1)), 5 * 60_000);
-    const nextAttemptAt = new Date(Date.now() + backoffMs);
+  const nextAttemptAt = computeDocumentRetryAt(job.attempts, job.maxAttempts);
+  if (nextAttemptAt) {
     await db.update(documentProcessingJobs)
       .set({ status: "queued", lockedAt: null, nextAttemptAt, lastError: error, updatedAt: new Date() })
       .where(eq(documentProcessingJobs.id, job.id));

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
-import { companies, documents, financialMetrics, researchSessions, riskFlags } from "@/db/schema";
+import { companies, documents, researchSessions } from "@/db/schema";
 import { generateBenchmarkInsights } from "@/lib/agents/benchmarkAgent";
 
 export async function POST(req: NextRequest) {
@@ -32,61 +32,33 @@ export async function POST(req: NextRequest) {
     if (!ownedSession) return NextResponse.json({ error: "Research session not found" }, { status: 404 });
   }
 
+  const visibleDocuments = [
+    inArray(documents.companyId, companyIds),
+    or(eq(documents.userId, session.user.id), eq(documents.isSeeded, true)),
+  ];
+  if (sessionId) visibleDocuments.push(eq(documents.sessionId, sessionId));
+
   const [companiesData, accessibleDocuments] = await Promise.all([
     db.select().from(companies).where(inArray(companies.id, companyIds)),
     db.select({ companyId: documents.companyId })
       .from(documents)
-      .where(and(
-        inArray(documents.companyId, companyIds),
-        or(eq(documents.userId, session.user.id), eq(documents.isSeeded, true)),
-      )),
+      .where(and(...visibleDocuments)),
   ]);
   const accessibleCompanyIds = new Set(accessibleDocuments.map((document) => document.companyId).filter(Boolean));
   if (companiesData.length !== companyIds.length || companyIds.some((id) => !accessibleCompanyIds.has(id))) {
-    return NextResponse.json({ error: "Each selected company must have a document you can access." }, { status: 400 });
+    return NextResponse.json({ error: "Each selected company must have a document you can access in this scope." }, { status: 400 });
   }
 
-  const allowedDocuments = await db.select({ id: documents.id })
-    .from(documents)
-    .where(and(
-      inArray(documents.companyId, companyIds),
-      or(eq(documents.userId, session.user.id), eq(documents.isSeeded, true)),
-    ));
-  const documentIds = allowedDocuments.map((document) => document.id);
-  const [metricsData, risksData] = documentIds.length > 0
-    ? await Promise.all([
-        db.select({ metrics: financialMetrics, sourceDocument: documents.fileName })
-          .from(financialMetrics)
-          .innerJoin(documents, eq(financialMetrics.documentId, documents.id))
-          .where(inArray(financialMetrics.documentId, documentIds))
-          .orderBy(sql`${financialMetrics.fiscalYear} DESC NULLS LAST`, desc(financialMetrics.extractedAt)),
-        db.select().from(riskFlags).where(inArray(riskFlags.documentId, documentIds)),
-      ])
-    : [[], []];
-
-  const latestByCompany = new Map<string, typeof metricsData[number]>();
-  for (const row of metricsData) {
-    if (row.metrics.companyId && !latestByCompany.has(row.metrics.companyId)) {
-      latestByCompany.set(row.metrics.companyId, row);
-    }
-  }
-  const latestMetrics = [...latestByCompany.values()].map(({ metrics, sourceDocument }) => ({
-    ...metrics,
-    sourceDocument,
-  }));
-
-  let insights: string;
   try {
-    // The agent provides a deterministic local comparison when Gemini is unavailable.
-    insights = await generateBenchmarkInsights(companyIds, session.user.id, sessionId);
+    const benchmark = await generateBenchmarkInsights(companyIds, session.user.id, sessionId);
+    return NextResponse.json({
+      // Includes all eligible metric rows, newest fiscal period first, not only one row per company.
+      metrics: benchmark.rows,
+      companies: companiesData,
+      insights: benchmark.insights,
+    });
   } catch (error) {
-    insights = `Benchmark could not be completed: ${String(error).slice(0, 400)}`;
+    console.error("Benchmark failed:", error);
+    return NextResponse.json({ error: "Benchmark failed. Please try again." }, { status: 500 });
   }
-
-  return NextResponse.json({
-    metrics: latestMetrics,
-    companies: companiesData,
-    risks: risksData,
-    insights,
-  });
 }

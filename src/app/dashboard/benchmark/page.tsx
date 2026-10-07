@@ -18,6 +18,9 @@ interface BenchmarkResult {
     companyId: string;
     fiscalYear: number | null;
     fiscalPeriod: string | null;
+    documentId: string;
+    companyName: string;
+    ticker: string | null;
     revenue: string | null;
     revenueGrowth: string | null;
     netIncome: string | null;
@@ -30,14 +33,22 @@ interface BenchmarkResult {
     roe: string | null;
     freeCashFlow: string | null;
     ebitdaMargin: string | null;
-    sourceDocument: string | null;
+    sourceDocument: string;
+    metricEvidence: Record<string, string>;
+    riskCount: number;
+    criticalRiskCount: number;
   }>;
-  risks: Array<{ companyId: string | null; severity: string }>;
   companies: Company[];
   insights: string;
 }
 
 const COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b"];
+const millionsCurrency = (value: string | null | undefined) => value === null || value === undefined || value === "" ? "N/A" : formatCurrency(Number(value) * 1e6, true);
+const chartValue = (value: string | null | undefined, multiplier = 1): number | null => {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number * multiplier : null;
+};
 
 export default function BenchmarkPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -70,38 +81,48 @@ export default function BenchmarkPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ companyIds: selected }),
       });
+      const data = await res.json();
       if (res.ok) {
-        setResult(await res.json());
+        setResult(data);
       } else {
-        toast.error("Benchmark failed");
+        toast.error(data.error || "Benchmark failed");
       }
+    } catch {
+      toast.error("Could not reach the benchmark service");
     } finally {
       setLoading(false);
     }
   }
 
   function toggleCompany(id: string) {
-    setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+    setSelected((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 8) {
+        toast.error("Select up to 8 companies");
+        return prev;
+      }
+      return [...prev, id];
+    });
   }
 
   const periodLabels = result
     ? result.companies.map((company) => {
         const metric = result.metrics.find((item) => item.companyId === company.id);
-        return metric ? `${metric.fiscalPeriod || "Annual"} ${metric.fiscalYear ?? "N/A"}` : "No stored metrics";
+        return metric ? `${metric.fiscalPeriod || "Period unknown"} ${metric.fiscalYear ?? "N/A"}` : "No source document";
       })
     : [];
-  const hasMismatchedPeriods = new Set(periodLabels).size > 1;
+  const hasMismatchedPeriods = new Set(periodLabels).size > 1 || periodLabels.some((label) => /unknown|no source document/i.test(label));
 
   const chartData = result
     ? result.companies.map((co, i) => {
         const m = result.metrics.find((m) => m.companyId === co.id);
         return {
           name: co.ticker || co.name,
-          Revenue: parseFloat(m?.revenue || "0"),
-          "Gross Margin %": parseFloat(m?.grossMargin || "0") * 100,
-          "Op Margin %": parseFloat(m?.operatingMargin || "0") * 100,
-          "Net Margin %": parseFloat(m?.netMargin || "0") * 100,
-          "Free CF": parseFloat(m?.freeCashFlow || "0"),
+          Revenue: chartValue(m?.revenue),
+          "Gross Margin %": chartValue(m?.grossMargin, 100),
+          "Op Margin %": chartValue(m?.operatingMargin, 100),
+          "Net Margin %": chartValue(m?.netMargin, 100),
+          "Free CF": chartValue(m?.freeCashFlow),
           color: COLORS[i % COLORS.length],
         };
       })
@@ -157,12 +178,13 @@ export default function BenchmarkPage() {
           {/* Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <h2 className="font-semibold text-slate-900 mb-4">Revenue (Millions USD)</h2>
+              <h2 className="font-semibold text-slate-900 mb-1">Revenue (Millions USD)</h2>
+              <p className="text-xs text-slate-500 mb-4">Latest available source period per company; all periods are listed below.</p>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={chartData}>
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(v: unknown) => `$${Number(v).toLocaleString()}M`} />
+                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(v: unknown) => v === null || v === undefined ? "N/A" : `$${Number(v).toLocaleString()}M`} />
                   <Bar dataKey="Revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -174,7 +196,7 @@ export default function BenchmarkPage() {
                 <BarChart data={chartData}>
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(v: unknown) => `${Number(v).toFixed(1)}%`} />
+                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(v: unknown) => v === null || v === undefined ? "N/A" : `${Number(v).toFixed(1)}%`} />
                   <Legend />
                   <Bar dataKey="Gross Margin %" fill="#10b981" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="Op Margin %" fill="#3b82f6" radius={[4, 4, 0, 0]} />
@@ -205,10 +227,10 @@ export default function BenchmarkPage() {
                 <tbody className="divide-y divide-slate-50">
                   {[
                     { label: "Fiscal Period", key: "fiscalPeriod", fmt: (v: string | null) => v || "N/A" },
-                    { label: "Revenue", key: "revenue", fmt: (v: string | null) => v ? formatCurrency(parseFloat(v) * 1e6, true) : "N/A" },
+                    { label: "Revenue", key: "revenue", fmt: (v: string | null) => millionsCurrency(v) },
                     { label: "Revenue Growth", key: "revenueGrowth", fmt: (v: string | null) => formatPercent(v) },
-                    { label: "Net Income", key: "netIncome", fmt: (v: string | null) => v ? formatCurrency(parseFloat(v) * 1e6, true) : "N/A" },
-                    { label: "Total Debt", key: "totalDebt", fmt: (v: string | null) => v ? formatCurrency(parseFloat(v) * 1e6, true) : "N/A" },
+                    { label: "Net Income", key: "netIncome", fmt: (v: string | null) => millionsCurrency(v) },
+                    { label: "Total Debt", key: "totalDebt", fmt: (v: string | null) => millionsCurrency(v) },
                     { label: "Gross Margin", key: "grossMargin", fmt: (v: string | null) => formatPercent(v) },
                     { label: "Operating Margin", key: "operatingMargin", fmt: (v: string | null) => formatPercent(v) },
                     { label: "Net Margin", key: "netMargin", fmt: (v: string | null) => formatPercent(v) },
@@ -216,26 +238,27 @@ export default function BenchmarkPage() {
                     { label: "Current Ratio", key: "currentRatio", fmt: (v: string | null) => formatNumber(v) },
                     { label: "D/E Ratio", key: "debtToEquity", fmt: (v: string | null) => formatNumber(v) },
                     { label: "ROE", key: "roe", fmt: (v: string | null) => formatPercent(v) },
-                    { label: "Free Cash Flow", key: "freeCashFlow", fmt: (v: string | null) => v ? formatCurrency(parseFloat(v) * 1e6, true) : "N/A" },
+                    { label: "Free Cash Flow", key: "freeCashFlow", fmt: (v: string | null) => millionsCurrency(v) },
                     { label: "Source Document", key: "sourceDocument", fmt: (v: string | null) => v || "N/A" },
-                    { label: "Risk Flags", key: "riskCount", fmt: (v: string | null) => v || "0" },
-                    { label: "Critical Risk Flags", key: "criticalRiskCount", fmt: (v: string | null) => v || "0" },
+                    { label: "Grounded Risk Flags (latest source)", key: "riskCount", fmt: (v: string | null) => v || "0" },
+                    { label: "Grounded Critical Risk Flags", key: "criticalRiskCount", fmt: (v: string | null) => v || "0" },
                   ].map(({ label, key, fmt }) => (
                     <tr key={key} className="hover:bg-slate-50 transition-colors">
                       <td className="px-5 py-3 font-medium text-slate-700 text-xs">{label}</td>
                       {result.companies.map((co) => {
                         const m = result.metrics.find((metric) => metric.companyId === co.id);
-                        const companyRisks = result.risks.filter((risk) => risk.companyId === co.id);
                         const val = key === "riskCount"
-                          ? String(companyRisks.length)
+                          ? String(m?.riskCount ?? 0)
                           : key === "criticalRiskCount"
-                            ? String(companyRisks.filter((risk) => risk.severity === "critical").length)
+                            ? String(m?.criticalRiskCount ?? 0)
                             : key === "fiscalPeriod"
-                              ? m ? `${m.fiscalPeriod || "N/A"} ${m.fiscalYear || ""}`.trim() : null
-                              : m ? (m as Record<string, string | null>)[key] : null;
+                              ? m ? `${m.fiscalPeriod || "N/A"} ${m.fiscalYear ?? ""}`.trim() : null
+                              : m ? (m as unknown as Record<string, string | null>)[key] : null;
                         return (
                           <td key={co.id} className={`text-center px-4 py-3 text-xs font-semibold text-slate-900 ${key === "sourceDocument" ? "max-w-xs whitespace-normal break-all" : ""}`}>
-                            {fmt(val)}
+                            {key === "sourceDocument" && m
+                              ? <a href={`/dashboard/documents/${m.documentId}`} className="text-blue-600 hover:underline">{m.sourceDocument}</a>
+                              : fmt(val)}
                           </td>
                         );
                       })}
@@ -246,7 +269,60 @@ export default function BenchmarkPage() {
             </div>
           </div>
 
-          {/* AI Insights */}
+          {/* Full source-document and period history */}
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h2 className="font-semibold text-slate-900">All Compared Documents &amp; Periods</h2>
+              <p className="mt-1 text-xs text-slate-500">No filing is silently discarded. Expand a row’s evidence to inspect the stored source quote for each extracted metric.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[1100px]">
+                <thead className="bg-slate-50">
+                  <tr>
+                    {["Company", "Fiscal Period", "Revenue", "Revenue Growth", "Gross Margin", "Net Income", "Free Cash Flow", "Grounded Risk Flags", "Source Document & Evidence"].map((label) => (
+                      <th key={label} className="text-left px-4 py-3 text-xs font-semibold text-slate-600">{label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {result.metrics.map((metric) => {
+                    const evidence = Object.entries(metric.metricEvidence || {});
+                    const company = result.companies.find((item) => item.id === metric.companyId);
+                    return (
+                      <tr key={metric.id} className="align-top hover:bg-slate-50">
+                        <td className="px-4 py-3 text-xs font-medium text-slate-800">{company?.ticker || metric.ticker || company?.name || metric.companyName}</td>
+                        <td className="px-4 py-3 text-xs whitespace-nowrap">{metric.fiscalPeriod || "Unknown"} {metric.fiscalYear ?? ""}</td>
+                        <td className="px-4 py-3 text-xs whitespace-nowrap">{millionsCurrency(metric.revenue)}</td>
+                        <td className="px-4 py-3 text-xs whitespace-nowrap">{formatPercent(metric.revenueGrowth)}</td>
+                        <td className="px-4 py-3 text-xs whitespace-nowrap">{formatPercent(metric.grossMargin)}</td>
+                        <td className="px-4 py-3 text-xs whitespace-nowrap">{millionsCurrency(metric.netIncome)}</td>
+                        <td className="px-4 py-3 text-xs whitespace-nowrap">{millionsCurrency(metric.freeCashFlow)}</td>
+                        <td className="px-4 py-3 text-xs whitespace-nowrap">{metric.riskCount} ({metric.criticalRiskCount} critical)</td>
+                        <td className="px-4 py-3 text-xs min-w-[260px]">
+                          <a href={`/dashboard/documents/${metric.documentId}`} className="text-blue-600 hover:underline break-all">{metric.sourceDocument}</a>
+                          <details className="mt-1">
+                            <summary className="cursor-pointer text-slate-500">{evidence.length ? `${evidence.length} verified metric source quote(s)` : "No metric-level source quotes passed validation"}</summary>
+                            {evidence.length > 0 && (
+                              <ul className="mt-2 space-y-2 text-slate-600">
+                                {evidence.map(([field, quote]) => (
+                                  <li key={field}><span className="font-semibold">{field.replaceAll("_", " ")}:</span> “{quote}”</li>
+                                ))}
+                              </ul>
+                            )}
+                          </details>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {result.metrics.length === 0 && (
+                    <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-slate-500">No extracted metric sets for these companies and documents.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Deterministic, source-field-based comparison summary */}
           {result.insights && (
             <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-6 text-white">
               <div className="flex items-center gap-2 mb-4">

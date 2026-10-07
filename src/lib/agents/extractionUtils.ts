@@ -45,7 +45,8 @@ const LABELS: Record<Exclude<keyof LocalExtractedMetrics, "fiscal_year" | "fisca
   total_liabilities: /^\s*total\s+liabilities\s*[:—-]/i,
   total_equity: /^\s*total\s+(?:shareholders'?\s+)?equity\s*[:—-]/i,
   cash_and_equivalents: /^\s*cash\s+and\s+(?:cash\s+)?equivalents\s*[:—-]/i,
-  total_debt: /^\s*(?:total\s+debt|long[- ]term\s+debt|short[- ]term\s+debt|borrowings)\s*[:—-]/i,
+  // Do not treat a single long-/short-term debt component as total debt.
+  total_debt: /^\s*(?:total\s+debt|total\s+borrowings|aggregate\s+debt)\s*[:—-]/i,
   current_ratio: /^\s*current\s+ratio\s*[:—-]/i,
   quick_ratio: /^\s*quick\s+ratio\s*[:—-]/i,
   debt_to_equity: /^\s*debt[- ]to[- ]equity(?:\s+ratio)?\s*[:—-]/i,
@@ -73,12 +74,17 @@ const MONEY_FIELDS = new Set([
 
 type MetricKey = keyof typeof LABELS;
 
-function matchingLine(lines: string[], pattern: RegExp): string | undefined {
-  return lines.find((line) => pattern.test(line));
+function moneyScaleToMillions(afterNumber: string): number {
+  const unit = afterNumber.trimStart().match(/^(trillion|tn|billion|bn|million|mn|thousand|mm|[tbmk])\b/i)?.[1]?.toLowerCase();
+  if (!unit) return 1;
+  if (["trillion", "tn", "t"].includes(unit)) return 1_000_000;
+  if (["billion", "bn", "b"].includes(unit)) return 1_000;
+  if (["thousand", "k"].includes(unit)) return 0.001;
+  return 1;
 }
 
 function extractNumber(line: string, field: string): number | undefined {
-  const numericPattern = /\(?\s*-?\$?\s*\d[\d,]*(?:\.\d+)?\s*\)?/g;
+  const numericPattern = /\(?\s*[+-]?\s*\$?\s*\d[\d,]*(?:\.\d+)?\s*\)?/g;
   const matches = [...line.matchAll(numericPattern)];
   if (matches.length === 0) return undefined;
 
@@ -90,12 +96,12 @@ function extractNumber(line: string, field: string): number | undefined {
 
   const raw = selected[0].trim();
   const negativeByParentheses = raw.startsWith("(") && raw.endsWith(")");
-  let value = Number(raw.replace(/[(),$\s]/g, ""));
+  let value = Number(raw.replace(/[(),$+\s]/g, ""));
   if (!Number.isFinite(value)) return undefined;
   if (negativeByParentheses) value = -Math.abs(value);
 
-  const after = line.slice((selected.index || 0) + selected[0].length, (selected.index || 0) + selected[0].length + 24).toLowerCase();
-  if (MONEY_FIELDS.has(field) && /\s*billion\b/.test(after)) value *= 1000;
+  const after = line.slice((selected.index || 0) + selected[0].length, (selected.index || 0) + selected[0].length + 32).toLowerCase();
+  if (MONEY_FIELDS.has(field)) value *= moneyScaleToMillions(after);
   if (PERCENT_FIELDS.has(field) && /\s*%/.test(after)) value /= 100;
   if (RATIO_FIELDS.has(field) && !PERCENT_FIELDS.has(field) && /\s*%/.test(after)) value /= 100;
   if (field === "revenue_growth" && /\b(?:decrease|decreased|decline|declined|fell|down)\b/i.test(line)) value = -Math.abs(value);
@@ -138,19 +144,38 @@ function normalizedText(text: string): string {
   return text.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ").trim();
 }
 
-export function evidenceSupportsMetricValue(field: string, value: number, evidence: string): boolean {
-  const tokens = [...evidence.matchAll(/\(?\s*-?\$?\s*\d[\d,]*(?:\.\d+)?\s*\)?/g)];
-  const tolerance = Math.max(0.02, Math.abs(value) * 0.005);
+export function evidenceLabelsMetric(field: string, evidence: string): boolean {
+  return LABELS[field as MetricKey]?.test(evidence) ?? false;
+}
+
+function evidenceMatchesCandidate(field: string, candidate: number, evidence: string): boolean {
+  const tokens = [...evidence.matchAll(/\(?\s*[+-]?\s*\$?\s*\d[\d,]*(?:\.\d+)?\s*\)?/g)];
+  const tolerance = Math.max(0.02, Math.abs(candidate) * 0.005);
   return tokens.some((match) => {
-    const raw = Number(match[0].replace(/[(),$\s]/g, ""));
-    if (!Number.isFinite(raw)) return false;
-    const suffix = evidence.slice((match.index || 0) + match[0].length, (match.index || 0) + match[0].length + 16).toLowerCase();
-    let normalized = raw;
+    const rawText = match[0].trim();
+    const negativeByParentheses = rawText.startsWith("(") && rawText.endsWith(")");
+    let normalized = Number(rawText.replace(/[(),$+\s]/g, ""));
+    if (!Number.isFinite(normalized)) return false;
+    if (negativeByParentheses) normalized = -Math.abs(normalized);
+    const suffix = evidence.slice((match.index || 0) + match[0].length, (match.index || 0) + match[0].length + 32).toLowerCase();
     if (PERCENT_FIELDS.has(field) && /\s*%/.test(suffix)) normalized /= 100;
-    if (MONEY_FIELDS.has(field) && /\s*(?:billion|bn|b)\b/.test(suffix)) normalized *= 1000;
-    const expected = PERCENT_FIELDS.has(field) && value > 1 && value <= 100 ? value / 100 : value;
-    return Math.abs(normalized - expected) <= Math.max(tolerance, Math.abs(expected) * 0.005);
+    if (MONEY_FIELDS.has(field)) normalized *= moneyScaleToMillions(suffix);
+    return Math.abs(normalized - candidate) <= Math.max(tolerance, Math.abs(candidate) * 0.005);
   });
+}
+
+/** Normalizes model percent-points only when the quoted source shows they need conversion. */
+export function normalizeMetricValueFromEvidence(field: string, value: number, evidence: string): number | undefined {
+  if (!Number.isFinite(value)) return undefined;
+  if (evidenceMatchesCandidate(field, value, evidence)) return value;
+  if (PERCENT_FIELDS.has(field) && value > 1 && value <= 100 && evidenceMatchesCandidate(field, value / 100, evidence)) {
+    return value / 100;
+  }
+  return undefined;
+}
+
+export function evidenceSupportsMetricValue(field: string, value: number, evidence: string): boolean {
+  return normalizeMetricValueFromEvidence(field, value, evidence) !== undefined;
 }
 
 /** Drops model-provided metric values that do not cite an exact quote with a matching number. */
@@ -173,12 +198,13 @@ export function validateExtractedMetrics<T extends Record<string, unknown>>(
     const value = typeof rawValue === "number" ? rawValue : Number(rawValue);
     const quote = typeof evidenceInput[field] === "string" ? evidenceInput[field] as string : "";
     const quoteExists = quote.length >= 12 && normalizedText(documentText).includes(normalizedText(quote));
-    const quoteLabelsMetric = LABELS[field as MetricKey]?.test(quote) ?? false;
-    if (!Number.isFinite(value) || !quoteExists || !quoteLabelsMetric || !evidenceSupportsMetricValue(field, value, quote)) {
+    const quoteLabelsMetric = evidenceLabelsMetric(field, quote);
+    const normalizedValue = normalizeMetricValueFromEvidence(field, value, quote);
+    if (!Number.isFinite(value) || !quoteExists || !quoteLabelsMetric || normalizedValue === undefined) {
       validated[field] = null;
       continue;
     }
-    validated[field] = PERCENT_FIELDS.has(field) && value > 1 && value <= 100 ? value / 100 : value;
+    validated[field] = normalizedValue;
     evidence[field] = quote.trim();
   }
 

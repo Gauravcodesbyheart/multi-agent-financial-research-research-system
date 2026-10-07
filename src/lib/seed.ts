@@ -1,11 +1,11 @@
 import { db } from "@/db";
 import {
-  users, companies, documents, financialMetrics, riskFlags, researchSessions, agentLogs,
+  users, companies, documents, researchSessions, agentLogs,
 } from "@/db/schema";
 import bcrypt from "bcryptjs";
-import { seedCompanies, seedDocumentContent, seedMetrics, seedRisks } from "./seedData";
-import { processDocument } from "./agents/documentAgent";
-import { indexDocumentEmbeddings } from "./agents/embeddingAgent";
+import { eq } from "drizzle-orm";
+import { seedCompanies, seedDocumentContent } from "./seedData";
+import { runDocumentPipeline } from "./agents/orchestrator";
 
 export async function seedDatabase() {
   console.log("🌱 Starting database seeding...");
@@ -15,7 +15,24 @@ export async function seedDatabase() {
 
   const existingUsers = await db.select().from(users).limit(1);
   if (existingUsers.length > 0) {
-    console.log("✅ Database already seeded. Skipping.");
+    const seededDocuments = await db.select().from(documents).where(eq(documents.isSeeded, true));
+    if (seededDocuments.length === 0) {
+      console.log("✅ Database already contains user data and no seeded filings to reconcile. Skipping.");
+      return;
+    }
+    console.log(`♻️ Reprocessing ${seededDocuments.length} existing seeded filing(s) through the live agent pipeline...`);
+    for (const document of seededDocuments) {
+      if (!document.content) continue;
+      try {
+        const result = await runDocumentPipeline(document.id, document.content, document.companyId || undefined);
+        if (result.status !== "completed") {
+          console.warn(`Seed pipeline for ${document.fileName} ended ${result.status}:`, result.failures.join("; "));
+        }
+      } catch (error) {
+        console.warn(`Seed pipeline failed for ${document.fileName}:`, error);
+      }
+    }
+    console.log("✅ Existing seeded filings reconciled with live extraction and risk checks.");
     return;
   }
 
@@ -87,101 +104,28 @@ export async function seedDatabase() {
       })
       .returning();
 
-    // Process document (chunking)
+    // Run exactly the same Document → Extraction → Red Flag stages used for uploads.
+    // With no text-model key, the evidence-carrying local extractor and deterministic rules run.
     try {
-      await processDocument(doc.id, content);
-    } catch (e) {
-      console.warn(`Warning: Document processing for ${company.name}:`, e);
-    }
-    try {
-      await indexDocumentEmbeddings(doc.id);
-    } catch (e) {
-      console.warn(`Warning: Embedding index for ${company.name}:`, e);
-    }
-
-    // Insert curated fixture metrics. These are demo baselines, not an Extraction Agent run.
-    const metrics = seedMetrics[company.name];
-    if (metrics) {
-      await db.insert(financialMetrics).values({
-        documentId: doc.id,
-        companyId: company.id,
-        fiscalYear: metrics.fiscalYear,
-        fiscalPeriod: "Annual",
-        revenue: metrics.revenue,
-        revenueGrowth: metrics.revenueGrowth,
-        grossProfit: metrics.grossProfit,
-        grossMargin: metrics.grossMargin,
-        operatingIncome: metrics.operatingIncome,
-        operatingMargin: metrics.operatingMargin,
-        netIncome: metrics.netIncome,
-        netMargin: metrics.netMargin,
-        ebitda: metrics.ebitda,
-        ebitdaMargin: metrics.ebitdaMargin,
-        totalAssets: metrics.totalAssets,
-        totalEquity: metrics.totalEquity,
-        cashAndEquivalents: metrics.cashAndEquivalents,
-        totalDebt: metrics.totalDebt,
-        currentRatio: metrics.currentRatio,
-        debtToEquity: metrics.debtToEquity,
-        roe: metrics.roe,
-        roa: metrics.roa,
-        eps: metrics.eps,
-        operatingCashFlow: metrics.operatingCashFlow,
-        freeCashFlow: metrics.freeCashFlow,
-        rawMetrics: {
-          source: "curated-seed-fixture",
-          note: "Demo baseline values for UI and tests; verify against original filings before using.",
-        },
-      });
-    }
-
-    // Insert risks
-    const risks = seedRisks[company.name];
-    if (risks && risks.length > 0) {
-      await db.insert(riskFlags).values(
-        risks.map((r) => ({
-          documentId: doc.id,
-          companyId: company.id,
-          riskType: r.riskType,
-          severity: r.severity,
-          title: r.title,
-          description: r.description,
-          sourceText: r.sourceText,
-          recommendation: r.recommendation,
-        }))
-      );
+      const result = await runDocumentPipeline(doc.id, content, company.id);
+      if (result.status !== "completed") {
+        console.warn(`Seed pipeline for ${company.name} ended ${result.status}:`, result.failures.join("; "));
+      }
+    } catch (error) {
+      console.warn(`Seed pipeline failed for ${company.name}:`, error);
     }
 
     console.log(`✅ Seeded ${company.name}`);
   }
 
-  // Add agent activity logs
-  await db.insert(agentLogs).values([
-    {
-      sessionId: demoSession.id,
-      agentName: "Document Agent",
-      action: "Completed indexing 4 documents",
-      status: "completed",
-      details: "Successfully chunked and indexed all seed company documents",
-      duration: 2340,
-    },
-    {
-      sessionId: demoSession.id,
-      agentName: "Demo Seed Fixture",
-      action: "Loaded curated financial metric baselines",
-      status: "completed",
-      details: "Fixture values were loaded for AAPL, MSFT, TSLA, and AMZN; the Extraction Agent was not run during seeding.",
-      duration: 0,
-    },
-    {
-      sessionId: demoSession.id,
-      agentName: "Demo Seed Fixture",
-      action: "Loaded curated risk examples",
-      status: "completed",
-      details: "Curated source-backed risk examples were loaded for demonstration; these are not a Red Flag Agent run.",
-      duration: 0,
-    },
-  ]);
+  await db.insert(agentLogs).values({
+    sessionId: demoSession.id,
+    agentName: "Seed Setup",
+    action: "Created demo data and launched per-document agent pipelines",
+    status: "completed",
+    details: "Each sample filing was processed through the same pipeline stages as user uploads. Agent-level results are logged against their document IDs.",
+    duration: 0,
+  });
 
   console.log("🎉 Database seeding complete!");
 }

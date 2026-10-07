@@ -1,50 +1,148 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { extractMetricsLocally, validateExtractedMetrics } from "./extractionUtils";
-import { seedDocumentContent, seedMetrics, seedRisks } from "@/lib/seedData";
-import { hasGroundedEvidence } from "./analysisUtils";
+import {
+  evidenceSupportsMetricValue,
+  extractMetricsLocally,
+  validateExtractedMetrics,
+} from "./extractionUtils";
+import { seedDocumentContent } from "@/lib/seedData";
+import {
+  detectMetricAnomalies,
+  detectTextualRedFlags,
+  hasGroundedEvidence,
+  type FinancialSnapshot,
+} from "./analysisUtils";
 
-test("seed document risk examples cite text present in their own source document", () => {
-  for (const [company, risks] of Object.entries(seedRisks)) {
-    const source = seedDocumentContent[company];
-    assert.ok(source, `missing seed document for ${company}`);
-    for (const risk of risks) {
-      assert.ok(hasGroundedEvidence(source, risk.sourceText), `${company}: unsupported quote: ${risk.sourceText}`);
-    }
-  }
-});
+// Independent assertions for values explicitly present in the simulated source filings.
+const seedMetricExpectations: Record<string, Record<string, number>> = {
+  "Apple Inc.": {
+    fiscal_year: 2023, revenue: 394328, revenue_growth: -0.0026, gross_margin: 0.429,
+    operating_income: 114301, operating_margin: 0.29, net_income: 96995, net_margin: 0.246,
+    total_assets: 352583, total_equity: 62146, current_ratio: 0.99, debt_to_equity: 1.53,
+    roe: 1.5608, roa: 0.2751, eps: 6.13, operating_cash_flow: 114164, free_cash_flow: 103205,
+  },
+  "Microsoft Corporation": {
+    fiscal_year: 2023, revenue: 211915, revenue_growth: 0.069, gross_margin: 0.689,
+    operating_income: 88523, operating_margin: 0.418, net_income: 72361, net_margin: 0.341,
+    total_assets: 411976, total_equity: 206223, current_ratio: 1.77, debt_to_equity: 0.20,
+    roe: 0.3509, roa: 0.1757, eps: 9.72, operating_cash_flow: 87582, free_cash_flow: 59475,
+  },
+  "Tesla, Inc.": {
+    fiscal_year: 2023, revenue: 96773, revenue_growth: 0.188, gross_margin: 0.182,
+    operating_income: 8891, operating_margin: 0.092, net_income: 14999, net_margin: 0.155,
+    total_assets: 106618, total_equity: 62634, current_ratio: 1.73, debt_to_equity: 0.05,
+    roe: 0.239, roa: 0.141, eps: 3.53, operating_cash_flow: 13256, free_cash_flow: 4358,
+  },
+  "Amazon.com, Inc.": {
+    fiscal_year: 2023, revenue: 574785, revenue_growth: 0.118, gross_margin: 0.469,
+    operating_income: 36852, operating_margin: 0.064, net_income: 30425, net_margin: 0.053,
+    total_assets: 527854, total_equity: 201875, current_ratio: 1.13, debt_to_equity: 0.29,
+    roe: 0.151, roa: 0.058, eps: 2.90, operating_cash_flow: 84946, free_cash_flow: 32217,
+  },
+};
 
-test("local extraction captures seeded financial values with source-backed quotes", () => {
+function snapshotFromLocalMetrics(metrics: ReturnType<typeof extractMetricsLocally>): FinancialSnapshot {
+  const evidence = metrics.metric_evidence || {};
+  return {
+    fiscalYear: metrics.fiscal_year,
+    fiscalPeriod: metrics.fiscal_period,
+    revenue: metrics.revenue,
+    totalDebt: metrics.total_debt,
+    grossMargin: metrics.gross_margin,
+    operatingMargin: metrics.operating_margin,
+    netMargin: metrics.net_margin,
+    totalAssets: metrics.total_assets,
+    totalLiabilities: metrics.total_liabilities,
+    totalEquity: metrics.total_equity,
+    currentRatio: metrics.current_ratio,
+    debtToEquity: metrics.debt_to_equity,
+    netIncome: metrics.net_income,
+    operatingCashFlow: metrics.operating_cash_flow,
+    metricEvidence: {
+      revenue: evidence.revenue,
+      totalDebt: evidence.total_debt,
+      grossMargin: evidence.gross_margin,
+      operatingMargin: evidence.operating_margin,
+      netMargin: evidence.net_margin,
+      totalAssets: evidence.total_assets,
+      totalLiabilities: evidence.total_liabilities,
+      totalEquity: evidence.total_equity,
+      currentRatio: evidence.current_ratio,
+      debtToEquity: evidence.debt_to_equity,
+      netIncome: evidence.net_income,
+      operatingCashFlow: evidence.operating_cash_flow,
+    },
+  };
+}
+
+test("local extraction on every seed filing returns values with exact, metric-specific evidence", () => {
   const checks = [
-    { actual: "revenue", expected: "revenue", tolerance: 1 },
-    { actual: "revenue_growth", expected: "revenueGrowth", tolerance: 0.001 },
-    { actual: "gross_margin", expected: "grossMargin", tolerance: 0.001 },
-    { actual: "operating_margin", expected: "operatingMargin", tolerance: 0.001 },
-    { actual: "net_income", expected: "netIncome", tolerance: 1 },
-    { actual: "net_margin", expected: "netMargin", tolerance: 0.001 },
-    { actual: "total_assets", expected: "totalAssets", tolerance: 1 },
-    { actual: "total_equity", expected: "totalEquity", tolerance: 1 },
-    { actual: "current_ratio", expected: "currentRatio", tolerance: 0.001 },
-    { actual: "eps", expected: "eps", tolerance: 0.001 },
+    { actual: "revenue", tolerance: 1 },
+    { actual: "revenue_growth", tolerance: 0.001 },
+    { actual: "gross_margin", tolerance: 0.001 },
+    { actual: "operating_income", tolerance: 1 },
+    { actual: "operating_margin", tolerance: 0.001 },
+    { actual: "net_income", tolerance: 1 },
+    { actual: "net_margin", tolerance: 0.001 },
+    { actual: "total_assets", tolerance: 1 },
+    { actual: "total_equity", tolerance: 1 },
+    { actual: "current_ratio", tolerance: 0.001 },
+    { actual: "debt_to_equity", tolerance: 0.001 },
+    { actual: "roe", tolerance: 0.001 },
+    { actual: "roa", tolerance: 0.001 },
+    { actual: "eps", tolerance: 0.001 },
+    { actual: "operating_cash_flow", tolerance: 1 },
+    { actual: "free_cash_flow", tolerance: 1 },
   ];
 
-  for (const [company, expected] of Object.entries(seedMetrics)) {
+  for (const [company, expected] of Object.entries(seedMetricExpectations)) {
     const source = seedDocumentContent[company];
+    assert.ok(source, `missing seed source for ${company}`);
     const extracted = extractMetricsLocally(source);
     const values = extracted as unknown as Record<string, unknown>;
-    assert.equal(extracted.fiscal_year, expected.fiscalYear, `${company} fiscal year`);
+    const validated = validateExtractedMetrics(values, source);
+
+    assert.equal(extracted.fiscal_year, expected.fiscal_year, `${company} fiscal year`);
     for (const check of checks) {
       const value = values[check.actual];
       const quote = extracted.metric_evidence?.[check.actual];
       assert.equal(typeof value, "number", `${company} ${check.actual} should be extracted`);
-      assert.ok(Math.abs(Number(value) - Number(expected[check.expected as keyof typeof expected])) <= check.tolerance, `${company} ${check.actual} value`);
+      assert.ok(Math.abs(Number(value) - expected[check.actual]) <= check.tolerance, `${company} ${check.actual} value`);
       assert.ok(quote, `${company} ${check.actual} evidence`);
-      assert.ok(hasGroundedEvidence(source, quote), `${company} ${check.actual} quote should be in its source document`);
+      assert.ok(hasGroundedEvidence(source, quote), `${company} ${check.actual} quote should occur in its source`);
+      assert.equal(validated[check.actual], value, `${company} ${check.actual} should survive strict validation`);
+    }
+
+    for (const [metric, quote] of Object.entries(extracted.metric_evidence || {})) {
+      const value = values[metric];
+      if (typeof value !== "number") continue;
+      assert.ok(hasGroundedEvidence(source, quote), `${company} ${metric} quote is source-grounded`);
+      assert.ok(evidenceSupportsMetricValue(metric, value, quote), `${company} ${metric} quote supports its value`);
     }
   }
 });
 
-test("Apple seed revenue change reconciles with the cited comparative figures", () => {
+test("Red Flag rules run on seed source text and every emitted quote is traceable", () => {
+  let appleFindings: ReturnType<typeof detectMetricAnomalies> = [];
+  for (const [company, source] of Object.entries(seedDocumentContent)) {
+    const metrics = extractMetricsLocally(source);
+    const findings = [
+      ...detectTextualRedFlags(source),
+      ...detectMetricAnomalies(snapshotFromLocalMetrics(metrics), source),
+    ];
+    if (company === "Apple Inc.") appleFindings = findings;
+    for (const finding of findings) {
+      const evidenceLines = finding.source_text.split(/\r?\n/).filter(Boolean);
+      assert.ok(evidenceLines.length > 0, `${company}: finding should have evidence`);
+      for (const line of evidenceLines) {
+        assert.ok(hasGroundedEvidence(source, line), `${company}: unsupported finding quote: ${line}`);
+      }
+    }
+  }
+  assert.ok(appleFindings.some((finding) => finding.title === "Current ratio is below 1.0"));
+});
+
+test("seed revenue growth reconciles with quoted comparative figures", () => {
   const text = seedDocumentContent["Apple Inc."];
   const comparisonLine = text.split("\n").find((line) => line.startsWith("Net sales:"));
   assert.ok(comparisonLine);
@@ -52,10 +150,25 @@ test("Apple seed revenue change reconciles with the cited comparative figures", 
   assert.equal(values.length, 2);
   assert.equal(values[1] - values[0], 1022);
   const computedGrowth = (values[0] - values[1]) / values[1];
-  assert.ok(Math.abs(computedGrowth - Number(seedMetrics["Apple Inc."].revenueGrowth)) < 0.0001);
+  assert.ok(Math.abs(computedGrowth - seedMetricExpectations["Apple Inc."].revenue_growth) < 0.0001);
 });
 
-test("LLM extraction discards values without a matching exact evidence quote", () => {
+test("extracts scale abbreviations and does not mistake long-term debt for total debt", () => {
+  const content = [
+    "Annual Report 2024",
+    "Total revenue: $1.25 billion",
+    "Total debt: $750 million",
+    "Long-term debt: $700 million",
+    "Free cash flow: $3.2B",
+  ].join("\n");
+  const extracted = extractMetricsLocally(content);
+  assert.equal(extracted.revenue, 1250);
+  assert.equal(extracted.total_debt, 750);
+  assert.equal(extracted.free_cash_flow, 3200);
+  assert.equal(extracted.metric_evidence?.total_debt, "Total debt: $750 million");
+});
+
+test("LLM extraction discards unsupported values and normalizes percentage values safely", () => {
   const content = "Total revenue: $1,250 million\nGross margin: 40.0%\nNet income: $1,250 million\n";
   const validated = validateExtractedMetrics({
     revenue: 1250,

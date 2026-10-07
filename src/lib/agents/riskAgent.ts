@@ -2,7 +2,7 @@
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { agentLogs, documents, financialMetrics, riskFlags } from "@/db/schema";
-import { generateJSON } from "./gemini";
+import { generateJSON } from "./llm";
 import {
   dedupeRiskFindings,
   detectFinancialTrendRisks,
@@ -14,7 +14,7 @@ import {
 } from "./analysisUtils";
 
 const RISK_SYSTEM = `You are a cautious financial red-flag analyst. Identify only material risks explicitly evidenced in the supplied filing.
-Do not infer facts. Every item must contain one exact source_text quote copied from the document. If no concrete item is supported, return an empty JSON array.`;
+Do not infer facts. Every item must contain one exact source_text quote copied from the document. If no concrete item is supported, return {"findings":[]}. Output one JSON object with a findings array.`;
 
 function snapshotFromMetric(
   metric: typeof financialMetrics.$inferSelect | undefined,
@@ -44,6 +44,7 @@ function snapshotFromMetric(
     currentRatio: metric.currentRatio,
     debtToEquity: metric.debtToEquity,
     netIncome: metric.netIncome,
+    operatingCashFlow: metric.operatingCashFlow,
     metricEvidence: {
       revenue: evidence("revenue"),
       totalDebt: evidence("total_debt"),
@@ -56,6 +57,7 @@ function snapshotFromMetric(
       currentRatio: evidence("current_ratio"),
       debtToEquity: evidence("debt_to_equity"),
       netIncome: evidence("net_income"),
+      operatingCashFlow: evidence("operating_cash_flow"),
     },
   };
 }
@@ -82,11 +84,13 @@ async function getCrossPeriodFindings(
   const currentRow = metricsRows.find((row) => row.metric.documentId === documentId);
   if (!currentRow) return [];
   const currentYear = currentRow.metric.fiscalYear;
+  const currentPeriod = currentRow.metric.fiscalPeriod || null;
   const previousRow = metricsRows.find((row) =>
     row.metric.documentId !== documentId &&
     row.metric.fiscalYear !== null &&
     currentYear !== null &&
-    row.metric.fiscalYear < currentYear,
+    row.metric.fiscalYear < currentYear &&
+    (row.metric.fiscalPeriod || null) === currentPeriod,
   );
   if (!previousRow) return [];
 
@@ -129,18 +133,18 @@ export async function scanForRisks(
     ];
 
     let validatedModelFindings: RiskFinding[] = [];
-    let modelStatus = "Gemini not configured; deterministic checks used.";
+    let modelStatus = "No text AI provider configured; deterministic checks used.";
     try {
       const prompt = `Review this financial document for additional material risks not already covered by deterministic checks.
-Return a JSON array with fields risk_type, severity (critical/high/medium/low), title, description, source_text (an exact quote of at least 12 characters copied from this document), and recommendation.
-Do not fabricate a quote. Return [] if there are no additional supported findings.
+Return one JSON object with a findings array. Each finding has fields risk_type, severity (critical/high/medium/low), title, description, source_text (an exact quote of at least 12 characters copied from this document), and recommendation. Use {"findings":[]} if there are no additional supported findings.
+Do not fabricate a quote.
 
 DOCUMENT TEXT:\n${content.length <= 30000 ? content : `${content.slice(0, 15000)}\n[Middle omitted]\n${content.slice(-15000)}`}`;
       const modelItems = await generateJSON<unknown>(prompt, RISK_SYSTEM);
       validatedModelFindings = validateModelRiskItems(modelItems, content);
       modelStatus = `Validated ${validatedModelFindings.length} additional model findings against source quotes.`;
     } catch (error) {
-      modelStatus = `Gemini unavailable; deterministic checks used. ${String(error).slice(0, 300)}`;
+      modelStatus = `Text AI unavailable; deterministic checks used. ${String(error).slice(0, 300)}`;
     }
 
     const findings = dedupeRiskFindings([...deterministicFindings, ...validatedModelFindings]);

@@ -36,9 +36,9 @@ FinResearch AI coordinates the following agents in a sequential document-process
 | **Extraction Agent** | Extracts financial metrics, validates model values against exact source quotes, and fills supported fields with a local parser. |
 | **Red Flag Agent** | Detects quote-backed disclosure signals, unusual financial values, rising debt, and falling margins; validates any model-added finding against exact source text. |
 | **Embedding Agent** | Optionally creates semantic vectors for chunks; keyword retrieval remains available when embeddings are not configured. |
-| **Benchmark Agent** | Compares the latest available company metrics and risk profiles with source document and fiscal-period context. |
-| **Research Agent** | Decomposes compound questions, retrieves evidence, and returns inline, source-linked citations. |
-| **Report Agent** | Produces an Executive Summary and deterministic Key Financials table, then adds detailed analysis and source-backed risk context when Gemini is available. |
+| **Benchmark Agent** | Retains every accessible document and fiscal period, validates displayed metric values against matching source quotes, and warns about unlike periods. |
+| **Research Agent** | Decomposes compound questions, retrieves evidence, and returns inline, source-linked citations; displayed claims must be verbatim source excerpts. |
+| **Report Agent** | Builds an Executive Summary and Key Financials table from source-validated values, retains all periods, and excludes unvalidated model prose. |
 
 ### 📊 Financial Metrics
 
@@ -72,7 +72,7 @@ The platform works with metrics such as:
 
 ### ⚠️ Risk Analysis
 
-The Red Flag Agent combines local, evidence-matched rules with optional Gemini analysis. It checks for auditor qualifications and going-concern language, accounting and balance-sheet anomalies, and cross-period movements such as debt increases and margin deterioration. A model-generated finding is kept only when its quoted source text is present and any numeric claims match the quote. Deterministic trend and anomaly checks require source lines whose values reconcile to the stored metrics; cross-period checks need matching evidence from both periods. Arithmetic inconsistencies are review flags, not definitive accusations. This is a screening aid, not an audit opinion.
+The Red Flag Agent combines local, evidence-matched rules with optional model analysis (Groq by default when `GROQ_API_KEY` is configured; Gemini can also be selected). It checks for auditor qualifications and going-concern language, accounting and balance-sheet anomalies, and cross-period movements such as debt increases and margin deterioration. A model-generated finding is kept only when its quoted source text is present and any numeric claims match the quote. Deterministic trend and anomaly checks require source lines whose values reconcile to the stored metrics; cross-period checks need matching evidence from both periods. Arithmetic inconsistencies are review flags, not definitive accusations. This is a screening aid, not an audit opinion.
 
 Risk records can contain:
 
@@ -86,25 +86,21 @@ Risk records can contain:
 
 ### 🏢 Company Benchmarking
 
-Compare companies across:
+Compare companies across every accessible source document and extracted fiscal period. The dashboard retains a latest-period side-by-side view plus a document history table with source links and metric-specific quotes. A value is displayed only when its metric label, number, and quote match the original document; missing or inconsistent evidence is shown as N/A. Stored risk counts include only flags with source-grounded quotes.
 
-* Latest stored financial metrics, with fiscal period and source document shown
-* Margins, ratios, cash flow, and debt
-* Risk indicators backed by selected documents
+Results are scoped to the signed-in user's documents plus the built-in demo dataset. If periods differ or are unknown, the UI flags that limitation instead of presenting an unsupported like-for-like comparison.
 
-Results are scoped to the signed-in user's documents plus the built-in demo dataset. If fiscal periods differ, the UI exposes the mismatch rather than presenting it as a like-for-like comparison.
-
-### 📑 AI-Generated Reports
+### 📑 Evidence-Validated Reports
 
 Generate structured reports containing:
 
-* Executive Summary
-* A deterministic Key Financials table (revenue, growth, margins, net income, debt, current ratio, free cash flow, fiscal period, and source document)
-* Key Findings and stored metric-comparison rows
-* Source-backed risk summary and recommendations
-* Full report content
+* Executive Summary and Key Financials
+* Every accessible filing period for the selected companies, not just the latest row
+* Metric values with citation IDs mapped to exact source excerpts and links
+* Red-flag passages only when the quote is grounded in the source
+* A verification checklist instead of buy/sell recommendations
 
-The Key Financials table is populated from the latest stored metrics even when Gemini is unavailable or omits the requested table.
+Reports are deterministic and do not display unvalidated AI-generated prose. Legacy reports without the evidence contract are hidden from view and download; generate a new report to replace them.
 
 ### 💬 Research Agent
 
@@ -124,11 +120,11 @@ Compare cash flow and debt-to-equity across two companies.
 What evidence supports the concentration risk?
 ```
 
-The Research Agent decomposes compound questions into retrieval steps and searches the active session's documents. Every chat history read, message write, and research retrieval checks that the signed-in user owns the requested session; document and message queries are scoped to that user as well. It uses Gemini semantic embeddings when every chunk in the collection has a compatible vector; otherwise it falls back to local keyword ranking. Model output is structured as individual claims; before display, every claim must use a retrieved source ID, include an exact quote found in that cited excerpt, and preserve numeric values, currencies, scales, and percentage units from the quote. Invalid claims are omitted, and a transparent evidence-only excerpt summary is used if generation or validation fails; when the research pipeline itself fails, the API returns an error rather than fabricating a chat answer. This deterministic source check improves auditability but does not prove that every paraphrase is semantically entailed; verify consequential conclusions in the original filing.
+The Research Agent decomposes compound questions into retrieval steps and searches the active session's documents. Every chat history read, message write, and research retrieval checks that the signed-in user owns the requested session; document and message queries are scoped to that user as well. Text synthesis uses Groq when `GROQ_API_KEY` is configured (Gemini can be selected as an alternative). It uses Gemini semantic embeddings when every chunk in the collection has a compatible vector; otherwise it falls back to local keyword ranking. Model output is structured as individual claims; before display, every claim must use a retrieved source ID, include an exact quote found in that cited excerpt, and preserve numeric values, currencies, scales, and percentage units from the quote. Invalid claims are omitted, and a transparent evidence-only excerpt summary is used if generation or validation fails; when the research pipeline itself fails, the API returns an error rather than fabricating a chat answer. This deterministic source check improves auditability but does not prove that every paraphrase is semantically entailed; verify consequential conclusions in the original filing.
 
 ### 🔄 Local Fallback Mode
 
-Gemini enriches the workflow but is not required for core evidence processing. Without a valid API key, the upload pipeline still chunks documents, runs local metric extraction and deterministic red-flag rules, and stores results. Query retrieval uses keywords instead of embeddings; research returns matching excerpts without unsupported conclusions; benchmark and report screens can use stored data and deterministic fallbacks. A configured key enables model extraction, risk review, semantic embeddings, and fuller narrative analysis. Embedding failures are recorded separately and do not disable keyword search.
+Text AI is optional for core evidence processing. When both provider keys are configured, `AI_PROVIDER=auto` prefers Groq; set it to `groq`, `gemini`, or `none` to choose explicitly. Without a text-model key, uploads still run document indexing, local metric extraction, deterministic red-flag checks, and keyword retrieval; Research returns cited excerpts rather than inventing a synthesis. Benchmarking and reports use deterministic, source-validated values with period history whether or not a model is configured. Groq or Gemini enables model-assisted extraction, additional quote-validated risk screening, and synthesized research. Semantic embeddings remain an optional Gemini feature; Groq-only setups use local keyword retrieval. Embedding failures are recorded separately and do not disable keyword search.
 
 ---
 
@@ -179,8 +175,8 @@ Gemini enriches the workflow but is not required for core evidence processing. W
                          │                       │                      │
                          ▼                       ▼                      ▼
                  ┌──────────────┐       ┌──────────────┐       ┌──────────────┐
-                 │ PostgreSQL   │       │ Google Gemini│       │   Document   │
-                 │ + Drizzle ORM│       │     API      │       │  Processing  │
+                 │ PostgreSQL   │       │ Groq / Gemini│       │   Document   │
+                 │ + Drizzle ORM│       │   Text APIs  │       │  Processing  │
                  └──────────────┘       └──────────────┘       └──────────────┘
 ```
 
@@ -198,10 +194,10 @@ Immediate `after()` trigger; scheduled worker recovers queued/stale jobs
 Document Agent: parse text → clean → chunk → persist source evidence
       │
       ▼
-Extraction Agent: local extraction + optional Gemini quote validation
+Extraction Agent: local extraction + optional Groq/Gemini quote validation
       │
       ▼
-Red Flag Agent: deterministic checks + optional quote-validated Gemini findings
+Red Flag Agent: deterministic checks + optional quote-validated model findings
       │
       ▼
 Embedding Agent: optional Gemini vectors (keyword search remains available)
@@ -249,7 +245,7 @@ Analyzes document evidence for potential financial and business risks and stores
 
 ### Benchmark Agent
 
-Compares companies using stored financial metrics and risk information.
+Compares all accessible documents and periods, retaining source links and showing only values whose metric-specific evidence and numbers validate against the filing.
 
 ### Research Agent
 
@@ -259,7 +255,7 @@ The Research Agent:
 2. Searches relevant document chunks
 3. Retrieves stored metrics
 4. Retrieves risk information
-5. Sends relevant evidence to Gemini when available
+5. Sends relevant evidence to the configured text model (Groq by default) when available
 6. Produces an evidence-grounded response with source references
 
 The system is designed to ground responses in retrieved document evidence; important financial values should still be verified against the original filing.
@@ -288,12 +284,12 @@ The system is designed to ground responses in retrieved document evidence; impor
 
 ## AI
 
-* **Google Gemini API**
-* Gemini-based metric extraction
-* Gemini-based risk analysis
-* Gemini-based research answers
-* Gemini-based benchmarking and reports
-* Local fallback processing
+* **Groq Chat Completions API** for model-assisted extraction, risk review, and research synthesis (optional; `openai/gpt-oss-20b` is the default)
+* Optional Gemini text generation as an alternative provider
+* Optional Gemini semantic embeddings; Groq-only deployments use local keyword retrieval
+* Server-side quote/evidence validation for model-assisted claims
+* Deterministic, source-validated benchmarking and reports
+* Local fallback processing when no text model is configured
 
 ## Document Processing
 
@@ -312,9 +308,10 @@ Semantic vectors are currently stored as JSONB arrays with their model name. Sim
 
 * **Vercel**
 * **Neon PostgreSQL**
-* Google AI Studio / Gemini API
+* GroqCloud API key (recommended for model-assisted text generation)
+* Optional Google AI Studio / Gemini API key for semantic embeddings or Gemini text generation
 
-This application uses Next.js, React, PostgreSQL, Drizzle ORM, NextAuth, document parsing, and optional Gemini-based analysis.
+This application uses Next.js, React, PostgreSQL, Drizzle ORM, NextAuth, document parsing, and optional Groq/Gemini model assistance.
 
 ---
 
@@ -462,7 +459,8 @@ Install:
 Optional:
 
 * Docker Desktop
-* Google AI Studio / Gemini API key
+* GroqCloud API key for model-assisted extraction, risk review, and research answers
+* Gemini API key for optional semantic embeddings or Gemini text generation
 * OCR software for scanned PDFs
 
 Use Node.js 20.9 or newer for Next.js 16, plus PostgreSQL 14 or newer.
@@ -472,11 +470,11 @@ Use Node.js 20.9 or newer for Next.js 16, plus PostgreSQL 14 or newer.
 ## 1. Clone the Repository
 
 ```bash
-git clone --branch arena/01a101ca-multi-agent-financial-research https://github.com/Gauravcodesbyheart/multi-agent-financial-research-research-system.git
+git clone https://github.com/Gauravcodesbyheart/multi-agent-financial-research-research-system.git
 cd multi-agent-financial-research-research-system
 ```
 
-If the changes have already been merged to the repository's default branch, omit `--branch arena/01a101ca-multi-agent-financial-research`.
+For work on an existing feature branch, fetch it and check it out before making changes.
 
 ## 2. Install Dependencies
 
@@ -514,14 +512,21 @@ NEXTAUTH_SECRET=replace-with-a-long-random-secret
 NEXTAUTH_URL=http://localhost:3000
 ```
 
-Optional AI configuration (omit `GEMINI_API_KEY` to use evidence-only local fallbacks):
+Optional text-AI configuration (Groq is preferred when `AI_PROVIDER=auto`):
 
 ```env
+AI_PROVIDER=auto               # auto, groq, gemini, or none
+GROQ_API_KEY=your-groq-api-key
+GROQ_MODEL=openai/gpt-oss-20b
+GROQ_MAX_COMPLETION_TOKENS=4096
+
+# Optional Gemini provider and semantic embeddings
 GEMINI_API_KEY=your-gemini-api-key
 GEMINI_MODEL=gemini-3.6-flash
-GEMINI_PRO_MODEL=gemini-3.6-flash
 GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 ```
+
+Create a Groq API key at [Groq Console](https://console.groq.com/keys). Groq is fast and offers a free tier, but it is **not unlimited**: requests are subject to organization/model quotas and rate limits. Check your current limits in the [Groq Console](https://console.groq.com/settings/limits).
 
 `CRON_SECRET` is needed to protect the scheduled recovery worker in production; local uploads still start immediately through `after()`. `SEED_SECRET` is optional locally and is required only if you deliberately invoke the demo seeder in production. Generate a local auth secret with `openssl rand -base64 32` (or a password manager); use distinct secrets for production.
 
@@ -597,7 +602,7 @@ PowerShell:
 Invoke-WebRequest http://localhost:3000/api/seed -Method GET
 ```
 
-The built-in demo users are `demo@finresearch.ai` and `student@finresearch.ai`, both with the local-only password `demo123456`. Change or remove these accounts before any public demo. The dataset includes Apple, Microsoft, Tesla, and Amazon; fixture metrics are illustrative and should be checked against their cited source text.
+The built-in demo users are `demo@finresearch.ai` and `student@finresearch.ai`, both with the local-only password `demo123456`. Change or remove these accounts before any public demo. The demo includes Apple, Microsoft, Tesla, and Amazon source filings. Seed metrics and risk flags are produced by the same document-processing agents used for uploads; the seeder reprocesses older seeded documents to replace legacy curated fixtures.
 
 In production, `GET /api/seed` is disabled; the `POST` route requires `SEED_SECRET` and an `x-seed-secret` header. Do not seed a real production workspace unless you explicitly need a controlled demo dataset.
 
@@ -605,12 +610,12 @@ In production, `GET /api/seed` is disabled; the `POST` route requires `SEED_SECR
 
 ## Making Changes on Your Local Machine
 
-1. Clone the repository and branch shown above (or fetch it in an existing clone):
+1. Clone the repository or fetch the feature branch you intend to work on:
 
    ```bash
    git fetch origin
-   git checkout arena/01a101ca-multi-agent-financial-research
-   git pull --ff-only origin arena/01a101ca-multi-agent-financial-research
+   git checkout YOUR_BRANCH
+   git pull --ff-only origin YOUR_BRANCH
    ```
 
 2. Install dependencies with `npm ci`, create `.env` from `.env.example`, point `DATABASE_URL` to your local PostgreSQL database, and apply migrations.
@@ -626,10 +631,10 @@ In production, `GET /api/seed` is disabled; the `POST` route requires `SEED_SECR
    ```bash
    git add .
    git commit -m "Describe the change"
-   git push origin arena/01a101ca-multi-agent-financial-research
+   git push origin YOUR_BRANCH
    ```
 
-   If you use a different branch in your own fork, replace the branch name in the commands. Never commit `.env` or confidential financial files.
+   Replace `YOUR_BRANCH` with the branch you committed on and push that same branch. Never commit `.env` or confidential financial files.
 
 # 🧪 Validate Before Deployment
 
@@ -707,11 +712,11 @@ Review risk types, severity, supporting evidence, and recommendations.
 
 ### 7. Benchmark Companies
 
-Select multiple companies and compare their stored financial metrics and risk profiles.
+Select companies to compare their latest available metric rows, then inspect every eligible document, fiscal period, and verified source quote in the history table.
 
 ### 8. Generate Reports
 
-Generate structured research reports containing key findings, comparisons, risks, and recommendations.
+Generate a source-validated Executive Summary and Key Financials table with all eligible periods, citation IDs, source links, grounded risk excerpts, and a verification checklist.
 
 ### 9. Ask the Research Agent
 
@@ -738,7 +743,7 @@ Vercel
                   │
                   │
                   ▼
-             Google Gemini
+             Groq / Gemini
 ```
 
 **Vercel + Neon PostgreSQL** is the recommended deployment route for this Next.js application.
@@ -774,10 +779,13 @@ Configure these in the hosting provider (never commit the values):
 DATABASE_URL
 NEXTAUTH_SECRET
 NEXTAUTH_URL
-GEMINI_API_KEY                 # optional; leave unset for evidence-only local fallbacks
-GEMINI_MODEL                   # e.g. gemini-3.6-flash
-GEMINI_PRO_MODEL               # e.g. gemini-3.6-flash
-GEMINI_EMBEDDING_MODEL         # e.g. gemini-embedding-001
+AI_PROVIDER                    # optional; defaults to auto (prefers Groq, then Gemini)
+GROQ_API_KEY                   # optional; enables model-assisted text features
+GROQ_MODEL                     # optional; default openai/gpt-oss-20b
+GROQ_MAX_COMPLETION_TOKENS     # optional; default 4096
+GEMINI_API_KEY                 # optional; Gemini text provider and/or semantic embeddings
+GEMINI_MODEL                   # optional; default Gemini text model
+GEMINI_EMBEDDING_MODEL         # optional; default gemini-embedding-001
 CRON_SECRET                    # required for scheduled durable-job recovery
 SEED_SECRET                    # only if controlled production demo seeding is needed
 ```
@@ -792,7 +800,7 @@ Render, Railway, Fly.io, or a VPS can also run this app. Use a managed PostgreSQ
 
 # 🔐 Security
 
-Security is especially important because the application processes financial documents and uses authentication and external AI services. Extracted source text is currently stored in PostgreSQL. When Gemini is configured, document excerpts/chunks and research prompts are sent to Google's Gemini API for model analysis or embeddings; confirm your data-handling and contractual requirements before uploading confidential material. Use a private database, HTTPS, and least-privilege credentials.
+Security is especially important because the application processes financial documents and uses authentication and external AI services. Extracted source text is currently stored in PostgreSQL. When a text model is configured, document excerpts and research prompts are sent to Groq or Gemini for generation; Gemini can also receive document chunks for embeddings. Review each provider's data-handling and contractual terms before uploading confidential material. Keep API keys server-side, use a private database and HTTPS, and grant least-privilege access.
 
 ### Never commit:
 
@@ -851,7 +859,7 @@ Rotate exposed keys, protect `/api/seed`, restrict database access, validate upl
 
 ### AI Provider Availability
 
-Gemini quota or provider availability affects model-enriched extraction, additional risk review, semantic embeddings, and narrative research/benchmark/report responses. Local metric extraction, deterministic red flags, keyword search, stored evidence, and evidence-only research/report fallbacks remain available for supported workflows.
+Groq and Gemini enforce model- and organization-specific rate limits; neither provider should be treated as unlimited. Provider quotas or outages affect model-assisted extraction, additional risk review, and synthesized research answers. Gemini quota or availability also affects optional semantic embeddings. Local metric extraction, deterministic red flags, keyword search, source-validated benchmarking, and evidence-only reports remain available for supported workflows.
 
 ### PDF Processing
 
@@ -919,11 +927,9 @@ npm run dev
 
 ---
 
-## Gemini API returns 429
+## Groq or Gemini API returns 429
 
-This generally indicates that the available API quota has been exceeded.
-
-You can use the application's supported fallback behavior or use a valid API configuration with available quota.
+A 429 response means the provider's current rate or quota limit was reached. Groq is not unlimited; review the organization limits in the [Groq Console](https://console.groq.com/settings/limits), wait for the window to reset, or choose a plan/model with suitable limits. The app falls back to local extraction, deterministic risk checks, keyword retrieval, and evidence-only research where supported. To switch providers, set `AI_PROVIDER=gemini` and configure `GEMINI_API_KEY`; to disable text generation, set `AI_PROVIDER=none`.
 
 ---
 
@@ -1055,7 +1061,8 @@ React
 PostgreSQL
 Drizzle ORM
 NextAuth
-Google Gemini
+Groq (optional text generation)
+Google Gemini (optional text and embeddings)
 Node.js
 TypeScript
 ```

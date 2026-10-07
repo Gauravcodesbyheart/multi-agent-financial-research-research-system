@@ -2,7 +2,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { agentLogs, documents, researchSessions } from "@/db/schema";
-import { DEFAULT_GEMINI_MODEL, generateJSON } from "./gemini";
+import { generateJSON } from "./llm";
 import { searchDocumentCollection, type RetrievedChunk } from "./documentAgent";
 import { tryCreateQueryEmbedding } from "./embeddingAgent";
 import { decomposeResearchQuestion, validateGroundedResearchAnswer } from "./analysisUtils";
@@ -127,8 +127,8 @@ export async function answerResearchQuestion(
     .join("\n");
 
   try {
-    const systemPrompt = `You are a careful financial research analyst. Use only the supplied indexed-document excerpts. Return valid JSON matching the requested schema, with no Markdown fences.
-Each retrieval step must be answered with atomic claims. Every factual claim must include one or more citation_ids and an exact supporting_quotes value for every cited source ID. Each quote must be a contiguous exact excerpt of at least 12 characters from that source. Preserve numbers and units exactly as written; do not convert, calculate, or infer. Do not use outside knowledge or conversation history as evidence. If no excerpt supports a step, set not_supported to true and return an empty claims array. Do not give investment advice.`;
+    const systemPrompt = `You are a careful financial research evidence assistant. Use only the supplied indexed-document excerpts. Return valid JSON matching the requested schema, with no Markdown fences.
+For each retrieval step, each claim.text MUST be copied verbatim as a contiguous source quote (at least 12 characters), not paraphrased. Set supporting_quotes for the cited ID to a source quote containing that exact claim.text. The server renders only verbatim claim text that passes exact-quote validation. Preserve source numbers and units exactly. Do not calculate, infer, use outside knowledge, or use conversation history as evidence. If no excerpt supports a step, set not_supported to true and return an empty claims array. Do not give investment advice.`;
     const prompt = `Return one JSON object with this shape:
 {
   "steps": [
@@ -136,9 +136,9 @@ Each retrieval step must be answered with atomic claims. Every factual claim mus
       "question": "the corresponding retrieval step",
       "claims": [
         {
-          "text": "one source-supported factual claim",
+          "text": "exact contiguous source quote of at least 12 characters",
           "citation_ids": ["S1"],
-          "supporting_quotes": {"S1": "exact contiguous quote copied from source S1"}
+          "supporting_quotes": {"S1": "a longer exact quote from source S1 containing text verbatim"}
         }
       ],
       "not_supported": false
@@ -157,9 +157,9 @@ ${citationContext}
 RECENT CONVERSATION (context only; never cite or treat as evidence):
 ${historyText || "None"}
 
-Each step must have its own claims. Split compound reasoning into atomic claims. Every number in a claim must appear verbatim in at least one of its exact supporting quotes. When a comparison relies on multiple sources, cite and quote each one.`;
-    const rawResponse = await generateJSON<unknown>(prompt, systemPrompt, DEFAULT_GEMINI_MODEL);
-    const validated = validateGroundedResearchAnswer(rawResponse, citations);
+Each step must have its own claims. In each claim, the text must be a verbatim contiguous sentence or clause from a retrieved excerpt; do not rewrite it in your own words. Every cited source ID must have its own exact supporting quote containing the claim. Do not perform calculations. When a step needs multiple source documents, return separate source-quoted claims for each document.`;
+    const rawResponse = await generateJSON<unknown>(prompt, systemPrompt);
+    const validated = validateGroundedResearchAnswer(rawResponse, citations, searchSteps);
     if (!validated) throw new Error("Generated response did not pass source-quote and numeric citation validation");
 
     const usedIds = new Set(validated.usedCitationIds);
@@ -185,7 +185,7 @@ Each step must have its own claims. Split compound reasoning into atomic claims.
       agentName: "Research Agent",
       action: "Answered with local evidence fallback",
       status: "partial",
-      details: `Gemini unavailable or failed citation validation: ${String(error).slice(0, 500)}`,
+      details: `Text AI unavailable or failed citation validation: ${String(error).slice(0, 500)}`,
       duration: Date.now() - startedAt,
     });
     return fallback;

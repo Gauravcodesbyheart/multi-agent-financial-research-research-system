@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { analysisReports, companies, documents, researchSessions } from "@/db/schema";
 import { and, eq, desc, inArray, or } from "drizzle-orm";
 import { generateAnalysisReport } from "@/lib/agents/reportAgent";
+import { sanitizeStoredReport } from "@/lib/agents/reportUtils";
 
 export const maxDuration = 300;
 
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
     .where(eq(analysisReports.userId, session.user.id))
     .orderBy(desc(analysisReports.createdAt));
 
-  return NextResponse.json({ reports });
+  return NextResponse.json({ reports: reports.map(sanitizeStoredReport) });
 }
 
 export async function POST(req: NextRequest) {
@@ -50,12 +51,14 @@ export async function POST(req: NextRequest) {
   }
 
   const selectedCompanies = await db.select().from(companies).where(inArray(companies.id, companyIds));
+  const documentConditions = [
+    inArray(documents.companyId, companyIds),
+    or(eq(documents.userId, session.user.id), eq(documents.isSeeded, true)),
+  ];
+  if (sessionId) documentConditions.push(eq(documents.sessionId, sessionId));
   const selectedDocuments = await db.select({ id: documents.id, companyId: documents.companyId })
     .from(documents)
-    .where(and(
-      inArray(documents.companyId, companyIds),
-      or(eq(documents.userId, session.user.id), eq(documents.isSeeded, true)),
-    ));
+    .where(and(...documentConditions));
   const companiesWithDocuments = new Set(selectedDocuments.map((document) => document.companyId).filter(Boolean));
   if (selectedCompanies.length !== companyIds.length || companyIds.some((id) => !companiesWithDocuments.has(id))) {
     return NextResponse.json({ error: "Each selected company must have a document you can access." }, { status: 400 });
@@ -73,7 +76,7 @@ export async function POST(req: NextRequest) {
 
   after(async () => {
     try {
-      await generateAnalysisReport(report.id, sessionId || report.id, session.user.id, companyIds, additionalContext);
+      await generateAnalysisReport(report.id, sessionId || report.id, session.user.id, companyIds, additionalContext, sessionId);
     } catch (error) {
       console.error("Report generation failed:", error);
     }

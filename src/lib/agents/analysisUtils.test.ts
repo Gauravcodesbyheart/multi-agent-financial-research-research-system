@@ -19,11 +19,19 @@ import {
     "What happened to margins?",
   ]);
   assert.deepEqual(decomposeResearchQuestion("What is revenue, and how did gross margin change?"), [
-    "What is revenue,",
+    "What is revenue",
     "how did gross margin change?",
   ]);
   assert.deepEqual(decomposeResearchQuestion("Compare revenue and margins for these two companies."), [
-    "Compare revenue and margins for these two companies.",
+    "Compare revenue",
+    "margins for these two companies.",
+  ]);
+  assert.deepEqual(decomposeResearchQuestion("What is Apple's revenue growth trend and gross margin compared to Microsoft?"), [
+    "What is Apple's revenue growth trend",
+    "gross margin compared to Microsoft?",
+  ]);
+  assert.deepEqual(decomposeResearchQuestion("What are research and development costs?"), [
+    "What are research and development costs?",
   ]);
 });
 
@@ -40,6 +48,15 @@ test("detects auditor qualification and retains exact source evidence", () => {
   assert.ok(auditorFinding);
   assert.ok(content.includes(auditorFinding.source_text));
   assert.equal(auditorFinding.severity, "critical");
+
+  const negated = detectTextualRedFlags(`The auditor did not issue a qualified opinion.\nThere is no substantial doubt about going concern.\nNo debt covenant breach was reported.`);
+  assert.deepEqual(negated, []);
+
+  const reportedGoingConcern = detectTextualRedFlags("The auditor raised substantial doubt about the entity's ability to continue as a going concern.");
+  assert.ok(reportedGoingConcern.some((finding) => finding.risk_type === "Going Concern"));
+
+  const negatedAfterPhrase = detectTextualRedFlags("A qualified audit opinion was not issued. The auditor's report concluded there was no going-concern uncertainty.");
+  assert.deepEqual(negatedAfterPhrase, []);
 });
 
 test("drops model risk findings whose source quote is fabricated", () => {
@@ -70,10 +87,19 @@ test("drops model risk findings whose source quote is fabricated", () => {
   assert.equal(findings.length, 1);
   assert.equal(findings[0].risk_type, "Revenue Risk");
   assert.ok(content.includes(findings[0].source_text));
+
+  const wrapped = validateModelRiskItems({ findings: [{
+    risk_type: "Revenue Risk",
+    severity: "medium",
+    title: "Revenue declined",
+    description: "The filing reports lower revenue.",
+    source_text: "12% decline in net sales during the year",
+  }] }, content);
+  assert.equal(wrapped.length, 1, "JSON-object mode responses should expose the findings array");
 });
 
 test("detects rising debt and falling margins only when both periods have source lines", () => {
-  const previousText = "Long-term debt: $100 million\nGross margin: 30.0%\n";
+  const previousText = "Total debt: $100 million\nGross margin: 30.0%\n";
   const currentText = "Total debt: $120 million\nGross margin: 26.0%\n";
   const findings = detectFinancialTrendRisks(
     { fiscalYear: 2022, fileName: "FY22.txt", totalDebt: "100", grossMargin: "0.30" },
@@ -110,6 +136,30 @@ test("detects rising debt and falling margins only when both periods have source
   ), []);
 });
 
+test("does not treat long-term debt alone as total debt for a cross-period trend", () => {
+  const findings = detectFinancialTrendRisks(
+    { fiscalYear: 2022, totalDebt: "100" },
+    { fiscalYear: 2023, totalDebt: "200" },
+    "Long-term debt: $100 million",
+    "Long-term debt: $200 million",
+  );
+  assert.equal(findings.some((finding) => finding.risk_type === "Debt Risk"), false);
+});
+
+test("flags source-backed negative liquidity and cash-conversion anomalies", () => {
+  const content = "Current ratio: 0.80\nNet income: $100 million\nOperating cash flow: -$20 million\n";
+  const findings = detectMetricAnomalies({
+    currentRatio: "0.8",
+    netIncome: "100",
+    operatingCashFlow: "-20",
+  }, content);
+  const liquidityFinding = findings.find((finding) => finding.risk_type === "Liquidity Risk");
+  const cashFlowFinding = findings.find((finding) => finding.risk_type === "Earnings Quality Risk");
+  assert.ok(liquidityFinding && content.includes(liquidityFinding.source_text));
+  assert.ok(cashFlowFinding);
+  assert.ok(cashFlowFinding.source_text.split("\n").every((line) => content.includes(line)));
+});
+
 test("flags balance-sheet arithmetic as a review item, not a definitive conclusion", () => {
   const content = "Total assets: $100 million\nTotal liabilities: $40 million\nTotal shareholders equity: $40 million\n";
   const findings = detectMetricAnomalies({ totalAssets: "100", totalLiabilities: "40", totalEquity: "40" }, content);
@@ -144,7 +194,7 @@ test("only renders research claims with an exact quote and matching cited number
     steps: [{
       question: "What was revenue?",
       claims: [{
-        text: "Revenue was $1,250 million in FY2023.",
+        text: "Revenue: $1,250 million in FY2023.",
         citation_ids: ["S1"],
         supporting_quotes: { S1: "Revenue: $1,250 million in FY2023." },
       }],
@@ -153,6 +203,19 @@ test("only renders research claims with an exact quote and matching cited number
   assert.ok(supported);
   assert.deepEqual(supported.usedCitationIds, ["S1"]);
   assert.match(supported.answer, /\[S1\]/);
+  assert.match(supported.answer, /“Revenue: \$1,250 million in FY2023\.”/);
+
+  const unsupportedParaphrase = validateGroundedResearchAnswer({
+    steps: [{
+      question: "What happened to revenue?",
+      claims: [{
+        text: "The company generated a strong revenue result.",
+        citation_ids: ["S1"],
+        supporting_quotes: { S1: "Revenue: $1,250 million in FY2023." },
+      }],
+    }],
+  }, evidence);
+  assert.deepEqual(unsupportedParaphrase?.usedCitationIds, []);
 
   const mismatchedNumber = validateGroundedResearchAnswer({
     steps: [{

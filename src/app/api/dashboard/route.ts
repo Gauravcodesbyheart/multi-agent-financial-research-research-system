@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { agentLogs, analysisReports, companies, documents, financialMetrics, researchSessions, riskFlags } from "@/db/schema";
+import { sanitizeStoredReport } from "@/lib/agents/reportUtils";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -66,7 +67,7 @@ export async function GET() {
       risks: Number(riskCount),
     },
     recentSessions,
-    recentReports,
+    recentReports: recentReports.map(sanitizeStoredReport),
     recentAgentActivity,
     metricsChartData,
   });

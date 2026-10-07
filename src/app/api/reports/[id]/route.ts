@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { analysisReports } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { sanitizeStoredReport } from "@/lib/agents/reportUtils";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     .limit(1);
 
   if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ report });
+  return NextResponse.json({ report: sanitizeStoredReport(report) });
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
