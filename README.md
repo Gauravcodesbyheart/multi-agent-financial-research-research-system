@@ -38,7 +38,7 @@ FinResearch AI coordinates the following agents in a sequential document-process
 | **Embedding Agent** | Optionally creates semantic vectors for chunks; keyword retrieval remains available when embeddings are not configured. |
 | **Benchmark Agent** | Compares the latest available company metrics and risk profiles with source document and fiscal-period context. |
 | **Research Agent** | Decomposes compound questions, retrieves evidence, and returns inline, source-linked citations. |
-| **Report Agent** | Produces an Executive Summary and deterministic Key Financials table, then adds detailed analysis and source-backed risk context when Gemini is available. |
+| **Report Agent** | Produces an Executive Summary and deterministic Key Financials table, then adds detailed analysis and source-backed risk context when a Groq key is configured. |
 
 ### 📊 Financial Metrics
 
@@ -72,7 +72,7 @@ The platform works with metrics such as:
 
 ### ⚠️ Risk Analysis
 
-The Red Flag Agent combines local, evidence-matched rules with optional Gemini analysis. It checks for auditor qualifications and going-concern language, accounting and balance-sheet anomalies, and cross-period movements such as debt increases and margin deterioration. A model-generated finding is kept only when its quoted source text is present and any numeric claims match the quote. Deterministic trend and anomaly checks require source lines whose values reconcile to the stored metrics; cross-period checks need matching evidence from both periods. Arithmetic inconsistencies are review flags, not definitive accusations. This is a screening aid, not an audit opinion.
+The Red Flag Agent combines local, evidence-matched rules with optional AI analysis. It checks for auditor qualifications and going-concern language, accounting and balance-sheet anomalies, and cross-period movements such as debt increases and margin deterioration. A model-generated finding is kept only when its quoted source text is present and any numeric claims match the quote. Deterministic trend and anomaly checks require source lines whose values reconcile to the stored metrics; cross-period checks need matching evidence from both periods. Arithmetic inconsistencies are review flags, not definitive accusations. This is a screening aid, not an audit opinion.
 
 Risk records can contain:
 
@@ -104,7 +104,7 @@ Generate structured reports containing:
 * Source-backed risk summary and recommendations
 * Full report content
 
-The Key Financials table is populated from the latest stored metrics even when Gemini is unavailable or omits the requested table.
+The Key Financials table is populated from the latest stored metrics even when the AI model is unavailable or omits the requested table.
 
 ### 💬 Research Agent
 
@@ -124,11 +124,11 @@ Compare cash flow and debt-to-equity across two companies.
 What evidence supports the concentration risk?
 ```
 
-The Research Agent decomposes compound questions into retrieval steps and searches the active session's documents. Every chat history read, message write, and research retrieval checks that the signed-in user owns the requested session; document and message queries are scoped to that user as well. It uses Gemini semantic embeddings when every chunk in the collection has a compatible vector; otherwise it falls back to local keyword ranking. Model output is structured as individual claims; before display, every claim must use a retrieved source ID, include an exact quote found in that cited excerpt, and preserve numeric values, currencies, scales, and percentage units from the quote. Invalid claims are omitted, and a transparent evidence-only excerpt summary is used if generation or validation fails; when the research pipeline itself fails, the API returns an error rather than fabricating a chat answer. This deterministic source check improves auditability but does not prove that every paraphrase is semantically entailed; verify consequential conclusions in the original filing.
+The Research Agent decomposes compound questions into retrieval steps and searches the active session's documents plus every session-less workspace document, so uploads made under the default “Workspace” option are always reachable. Every chat history read, message write, and research retrieval checks that the signed-in user owns the requested session; document and message queries are scoped to that user as well. It uses semantic embeddings when a separate embeddings provider is configured and every chunk in the collection has a compatible vector; otherwise it falls back to local keyword ranking (which needs no external service). Model output is structured as individual claims; before display, every claim must use a retrieved source ID, include an exact quote found in that cited excerpt, and preserve numeric values, currencies, scales, and percentage units from the quote. Invalid claims are omitted, and a transparent evidence-only excerpt summary is used if generation or validation fails; when the research pipeline itself fails, the API returns an error rather than fabricating a chat answer. This deterministic source check improves auditability but does not prove that every paraphrase is semantically entailed; verify consequential conclusions in the original filing.
 
 ### 🔄 Local Fallback Mode
 
-Gemini enriches the workflow but is not required for core evidence processing. Without a valid API key, the upload pipeline still chunks documents, runs local metric extraction and deterministic red-flag rules, and stores results. Query retrieval uses keywords instead of embeddings; research returns matching excerpts without unsupported conclusions; benchmark and report screens can use stored data and deterministic fallbacks. A configured key enables model extraction, risk review, semantic embeddings, and fuller narrative analysis. Embedding failures are recorded separately and do not disable keyword search.
+Groq enriches the workflow but is not required for core evidence processing. Without a valid API key, the upload pipeline still chunks documents, runs local metric extraction and deterministic red-flag rules, and stores results. Query retrieval uses keywords instead of embeddings; research returns matching excerpts without unsupported conclusions; benchmark and report screens can use stored data and deterministic fallbacks. A configured key enables model extraction, risk review, and fuller narrative analysis. Semantic embeddings additionally require a separate embeddings provider because Groq does not serve an embeddings API. Embedding failures are recorded separately and do not disable keyword search.
 
 ---
 
@@ -179,7 +179,7 @@ Gemini enriches the workflow but is not required for core evidence processing. W
                          │                       │                      │
                          ▼                       ▼                      ▼
                  ┌──────────────┐       ┌──────────────┐       ┌──────────────┐
-                 │ PostgreSQL   │       │ Google Gemini│       │   Document   │
+                 │ PostgreSQL   │       │  Groq (LLM)  │       │   Document   │
                  │ + Drizzle ORM│       │     API      │       │  Processing  │
                  └──────────────┘       └──────────────┘       └──────────────┘
 ```
@@ -198,13 +198,13 @@ Immediate `after()` trigger; scheduled worker recovers queued/stale jobs
 Document Agent: parse text → clean → chunk → persist source evidence
       │
       ▼
-Extraction Agent: local extraction + optional Gemini quote validation
+Extraction Agent: local extraction + optional Groq quote validation
       │
       ▼
-Red Flag Agent: deterministic checks + optional quote-validated Gemini findings
+Red Flag Agent: deterministic checks + optional quote-validated AI findings
       │
       ▼
-Embedding Agent: optional Gemini vectors (keyword search remains available)
+Embedding Agent: optional vectors from a separate embeddings provider (Groq has none; keyword search always remains available)
       │
       └──► document status: completed / partial / failed
 
@@ -259,7 +259,7 @@ The Research Agent:
 2. Searches relevant document chunks
 3. Retrieves stored metrics
 4. Retrieves risk information
-5. Sends relevant evidence to Gemini when available
+5. Sends relevant evidence to the LLM when available
 6. Produces an evidence-grounded response with source references
 
 The system is designed to ground responses in retrieved document evidence; important financial values should still be verified against the original filing.
@@ -288,11 +288,11 @@ The system is designed to ground responses in retrieved document evidence; impor
 
 ## AI
 
-* **Google Gemini API**
-* Gemini-based metric extraction
-* Gemini-based risk analysis
-* Gemini-based research answers
-* Gemini-based benchmarking and reports
+* **Groq API** (OpenAI-compatible)
+* Groq-based metric extraction
+* Groq-based risk analysis
+* Groq-based research answers
+* Groq-based benchmarking and reports
 * Local fallback processing
 
 ## Document Processing
@@ -312,9 +312,9 @@ Semantic vectors are currently stored as JSONB arrays with their model name. Sim
 
 * **Vercel**
 * **Neon PostgreSQL**
-* Google AI Studio / Gemini API
+* Groq console (console.groq.com/keys)
 
-This application uses Next.js, React, PostgreSQL, Drizzle ORM, NextAuth, document parsing, and optional Gemini-based analysis.
+This application uses Next.js, React, PostgreSQL, Drizzle ORM, NextAuth, document parsing, and optional Groq-based analysis.
 
 ---
 
@@ -462,7 +462,7 @@ Install:
 Optional:
 
 * Docker Desktop
-* Google AI Studio / Gemini API key
+* Groq console (console.groq.com/keys) key
 * OCR software for scanned PDFs
 
 Use Node.js 20.9 or newer for Next.js 16, plus PostgreSQL 14 or newer.
@@ -509,18 +509,25 @@ Copy-Item .env.example .env
 Set at least:
 
 ```env
-DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@127.0.0.1:5432/app_db
+# Neon pooled endpoint (host contains -pooler). Keep ?sslmode=require.
+DATABASE_URL="postgresql://user:password@ep-xxx-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require"
+# Neon direct endpoint — used only by migrations (DDL cannot run through PgBouncer).
+DIRECT_URL="postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require"
 NEXTAUTH_SECRET=replace-with-a-long-random-secret
 NEXTAUTH_URL=http://localhost:3000
 ```
 
-Optional AI configuration (omit `GEMINI_API_KEY` to use evidence-only local fallbacks):
+Optional AI configuration (omit `GROQ_API_KEY` to use evidence-only local fallbacks):
 
 ```env
-GEMINI_API_KEY=your-gemini-api-key
-GEMINI_MODEL=gemini-3.8-flash
-GEMINI_PRO_MODEL=gemini-3.8-flash
-GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+GROQ_API_KEY=your-groq-api-key
+GROQ_MODEL=openai/gpt-oss-120b
+# Optional: point at any other OpenAI-compatible endpoint
+# LLM_BASE_URL=https://api.groq.com/openai/v1
+# Optional: semantic search needs a separate embeddings provider (Groq has none)
+# EMBEDDING_BASE_URL=https://api.openai.com/v1
+# EMBEDDING_API_KEY=
+# EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 `CRON_SECRET` is needed to protect the scheduled recovery worker in production; local uploads still start immediately through `after()`. `SEED_SECRET` is optional locally and is required only if you deliberately invoke the demo seeder in production. Generate a local auth secret with `openssl rand -base64 32` (or a password manager); use distinct secrets for production.
@@ -578,7 +585,13 @@ Expected healthy response:
 {
   "status": "ok",
   "database": "connected",
-  "ai": { "configured": true, "state": "ready" }
+  "ai": {
+    "provider": "Groq",
+    "configured": true,
+    "state": "ready",
+    "chatModel": "openai/gpt-oss-120b",
+    "embedding": null
+  }
 }
 ```
 
@@ -615,9 +628,9 @@ first whenever the agents "don't work":
 npm run doctor
 ```
 
-It checks `DATABASE_URL`, `NEXTAUTH_SECRET`, `GEMINI_API_KEY`, the live database
-connection, the presence of every required table, and your content counts, then
-prints the exact fix for each failing item. `GET /api/health` reports the same AI
+It checks `DATABASE_URL`, `NEXTAUTH_SECRET`, `GROQ_API_KEY`, the live Neon connection,
+Neon pooled/TLS settings, the presence of every required table, and your content
+counts, then prints the exact fix for each failing item. `GET /api/health` reports the same AI
 state as JSON.
 
 ### Common causes
@@ -626,10 +639,14 @@ state as JSON.
 | --- | --- | --- |
 | Every request fails, login rejects valid passwords | `DATABASE_URL` is unset or the database is unreachable; `pg` silently falls back to `localhost:5432` | Set `DATABASE_URL` in `.env`; the app now refuses to start with a clear error instead of failing per-request |
 | Login always says invalid credentials | Database is reachable but the schema was never created | `npm run db:push` (development) or `npm run db:migrate` |
-| Research Agent returns passages but never a written answer | `GEMINI_API_KEY` is missing or invalid | Add a key; the response now states this explicitly instead of just returning excerpts |
-| `/api/health` shows `"state": "degraded"` | The configured model was rejected (retired or not enabled for your key) | The client automatically retries fallback models and reports the substitution in `ai.lastNotice`; pin another model with `GEMINI_MODEL` |
+| Research Agent returns passages but never a written answer | `GROQ_API_KEY` is missing or invalid | Add a key; the response now states this explicitly instead of just returning excerpts |
+| `/api/health` shows `"state": "degraded"` | The configured model was rejected (renamed, decommissioned, or not enabled for your key) | The client automatically retries fallback models and reports the substitution in `ai.lastNotice`; pin another model with `GROQ_MODEL` |
 | A document is uploaded and indexed but no question ever cites it | Document was uploaded under **Workspace (all sessions)** while a different session was in use | The Research Agent searches the active session plus all session-less workspace documents; link the document to a session to scope it |
 | Metrics/risks are empty after upload | Processing job did not finish | Check the Documents page status, then `GET /api/worker/documents` with `Authorization: Bearer $CRON_SECRET` to drain queued jobs |
+| `remaining connection slots are reserved` | Using Neon's direct endpoint, or too large a pool per serverless instance | Switch `DATABASE_URL` to the `-pooler` host and keep `DATABASE_POOL_MAX` at 1–2 on serverless |
+| Migrations fail or hang on Neon | DDL was sent through PgBouncer | Set `DIRECT_URL` to Neon's non-pooler host; `drizzle.config.ts` prefers it automatically |
+| Semantic search never activates | Groq does not provide an embeddings API | Configure `EMBEDDING_BASE_URL`/`EMBEDDING_API_KEY`/`EMBEDDING_MODEL`; keyword retrieval works without it |
+| Model errors such as "model does not exist" | The model was renamed or decommissioned by Groq | The client retries known-good fallbacks automatically; check `ai.lastNotice` and pin `GROQ_MODEL` |
 
 ---
 
@@ -772,7 +789,7 @@ Vercel
                   │
                   │
                   ▼
-             Google Gemini
+             Google Groq
 ```
 
 **Vercel + Neon PostgreSQL** is the recommended deployment route for this Next.js application.
@@ -805,13 +822,17 @@ Vercel
 Configure these in the hosting provider (never commit the values):
 
 ```text
-DATABASE_URL
+DATABASE_URL                   # Neon POOLED endpoint (-pooler host, ?sslmode=require)
+DIRECT_URL                     # Neon DIRECT endpoint; migrations only
 NEXTAUTH_SECRET
 NEXTAUTH_URL
-GEMINI_API_KEY                 # optional; leave unset for evidence-only local fallbacks
-GEMINI_MODEL                   # e.g. gemini-3.8-flash
-GEMINI_PRO_MODEL               # e.g. gemini-3.8-flash
-GEMINI_EMBEDDING_MODEL         # e.g. gemini-embedding-001
+GROQ_API_KEY                   # optional; leave unset for evidence-only local fallbacks
+GROQ_MODEL                     # e.g. openai/gpt-oss-120b
+GROQ_MODEL_PRO                 # optional; larger model for reports
+LLM_BASE_URL                   # optional; any OpenAI-compatible endpoint
+EMBEDDING_BASE_URL             # optional; semantic search (Groq has no embeddings API)
+EMBEDDING_API_KEY              # optional
+EMBEDDING_MODEL                # optional
 CRON_SECRET                    # required for scheduled durable-job recovery
 SEED_SECRET                    # only if controlled production demo seeding is needed
 ```
@@ -826,7 +847,7 @@ Render, Railway, Fly.io, or a VPS can also run this app. Use a managed PostgreSQ
 
 # 🔐 Security
 
-Security is especially important because the application processes financial documents and uses authentication and external AI services. Extracted source text is currently stored in PostgreSQL. When Gemini is configured, document excerpts/chunks and research prompts are sent to Google's Gemini API for model analysis or embeddings; confirm your data-handling and contractual requirements before uploading confidential material. Use a private database, HTTPS, and least-privilege credentials.
+Security is especially important because the application processes financial documents and uses authentication and external AI services. Extracted source text is currently stored in PostgreSQL. When Groq is configured, document excerpts/chunks and research prompts are sent to Google's Groq API for model analysis or embeddings; confirm your data-handling and contractual requirements before uploading confidential material. Use a private database, HTTPS, and least-privilege credentials.
 
 ### Never commit:
 
@@ -885,7 +906,7 @@ Rotate exposed keys, protect `/api/seed`, restrict database access, validate upl
 
 ### AI Provider Availability
 
-Gemini quota or provider availability affects model-enriched extraction, additional risk review, semantic embeddings, and narrative research/benchmark/report responses. Local metric extraction, deterministic red flags, keyword search, stored evidence, and evidence-only research/report fallbacks remain available for supported workflows.
+Groq quota or provider availability affects model-enriched extraction, additional risk review, semantic embeddings, and narrative research/benchmark/report responses. Local metric extraction, deterministic red flags, keyword search, stored evidence, and evidence-only research/report fallbacks remain available for supported workflows.
 
 ### PDF Processing
 
@@ -953,7 +974,7 @@ npm run dev
 
 ---
 
-## Gemini API returns 429
+## Groq API returns 429
 
 This generally indicates that the available API quota has been exceeded.
 
@@ -1089,7 +1110,7 @@ React
 PostgreSQL
 Drizzle ORM
 NextAuth
-Google Gemini
+Google Groq
 Node.js
 TypeScript
 ```

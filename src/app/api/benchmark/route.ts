@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
 
   let insights: string;
   try {
-    // The agent provides a deterministic local comparison when Gemini is unavailable.
+    // The agent provides a deterministic local comparison when the AI model is unavailable.
     insights = await generateBenchmarkInsights(companyIds, session.user.id, sessionId);
   } catch (error) {
     insights = `Benchmark could not be completed: ${String(error).slice(0, 400)}`;

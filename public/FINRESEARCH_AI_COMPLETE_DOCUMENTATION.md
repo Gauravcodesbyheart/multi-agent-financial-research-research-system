@@ -68,9 +68,9 @@ Next.js 16 App (React Frontend + API Routes)
     │       ├── Research Agent (session-scoped cited retrieval)
     │       └── Report Agent (Executive Summary + Key Financials)
     │
-    ├─── Optional Google Gemini API
-    │       ├── gemini-3.8-flash (analysis and narrative generation)
-    │       └── gemini-embedding-001 (optional semantic search)
+    ├─── Optional Groq API
+    │       ├── Groq openai/gpt-oss-120b (analysis and narrative generation)
+    │       └── any OpenAI-compatible embeddings provider (optional semantic search)
     │
     └─── PostgreSQL via Drizzle ORM
             ├── users, research_sessions, companies, documents
@@ -106,7 +106,7 @@ Next.js 16 App (React Frontend + API Routes)
 - Cash flows: operating, capital expenditures, free cash flow
 - Per share: EPS
 
-**How:** Uses Gemini JSON extraction when configured, validates each metric against an exact quote and matching numeric evidence, and fills supported values with a deterministic local parser when needed.
+**How:** Uses Groq JSON extraction when configured, validates each metric against an exact quote and matching numeric evidence, and fills supported values with a deterministic local parser when needed.
 
 ### Agent 3: Risk Agent
 **What it does:** Combines deterministic disclosure checks, source-matched metric anomalies, and optional model findings.
@@ -114,7 +114,7 @@ Next.js 16 App (React Frontend + API Routes)
 Checks include audit/going-concern language, accounting disclosures, liquidity warnings, balance-sheet anomalies, and cross-period debt, revenue, or margin movements. Trend checks require comparable periods and source evidence whose values match the stored metrics. Model-added findings are retained only when source quotes and numeric claims validate. These are screening signals, not audit conclusions.
 
 ### Agent 4: Embedding Agent
-**What it does:** Optionally creates semantic vectors for document chunks using Gemini embeddings. Vectors are stored in JSONB with a model identifier; keyword search remains available if embeddings are not configured or compatible.
+**What it does:** Optionally creates semantic vectors for document chunks using Groq embeddings. Vectors are stored in JSONB with a model identifier; keyword search remains available if embeddings are not configured or compatible.
 
 ### Agent 5: Benchmark Agent
 **What it does:** Compares accessible companies using their latest stored financial metrics and risk flags. It displays source documents and fiscal periods and warns when periods are missing or differ. The system does not generate buy/sell recommendations.
@@ -122,10 +122,10 @@ Checks include audit/going-concern language, accounting disclosures, liquidity w
 ### Agent 6: Research Agent (Conversational)
 **What it does:** Retrieves evidence from the signed-in user's selected research session. Session ownership is checked before reading history, writing messages, or searching documents.
 
-Each generated factual claim must use a retrieved citation and exact quote. Numeric values, currencies, scales, and percentage units must match the quote. When Gemini is unavailable, the agent returns relevant retrieved excerpts rather than canned statistics. Quote checks improve traceability but do not prove semantic entailment; verify important conclusions against the original filing.
+Each generated factual claim must use a retrieved citation and exact quote. Numeric values, currencies, scales, and percentage units must match the quote. When Groq is unavailable, the agent returns relevant retrieved excerpts rather than canned statistics. Quote checks improve traceability but do not prove semantic entailment; verify important conclusions against the original filing.
 
 ### Agent 7: Report Agent
-**What it does:** Creates an Executive Summary and a deterministic Key Financials table with periods and source filenames, then adds detailed analysis when Gemini is available. The table remains available in the local report fallback.
+**What it does:** Creates an Executive Summary and a deterministic Key Financials table with periods and source filenames, then adds detailed analysis when Groq is available. The table remains available in the local report fallback.
 
 ---
 
@@ -149,9 +149,9 @@ Each generated factual claim must use a retrieved citation and exact quote. Nume
 - **mammoth** — DOCX text extraction
 
 ### AI
-- **Google Gemini API** (@google/generative-ai), optional for model analysis
-  - `gemini-3.8-flash`: configurable default for extraction, risk review, research, benchmarking, and reports
-  - `gemini-embedding-001`: optional semantic retrieval
+- **Groq API** (@google/generative-ai), optional for model analysis
+  - `openai/gpt-oss-120b`: configurable Groq default for extraction, risk review, research, benchmarking, and reports
+  - Optional embeddings provider (`EMBEDDING_*`): semantic retrieval; Groq itself has no embeddings API
 
 ### Database
 - **PostgreSQL** — Relational database
@@ -307,10 +307,10 @@ NEXTAUTH_SECRET=your-random-secret-key-at-least-32-chars
 NEXTAUTH_URL=http://localhost:3000
 
 # Optional AI configuration (local extraction/retrieval still work without a key)
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-3.8-flash
-GEMINI_PRO_MODEL=gemini-3.8-flash
-GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+GROQ_API_KEY=
+GROQ_MODEL=openai/gpt-oss-120b
+GROQ_MODEL_PRO=openai/gpt-oss-120b
+# EMBEDDING_BASE_URL / EMBEDDING_API_KEY / EMBEDDING_MODEL = optional semantic search
 
 # Set when you configure the scheduled recovery worker
 CRON_SECRET=
@@ -319,7 +319,7 @@ CRON_SECRET=
 SEED_SECRET=
 ```
 
-**Optional Gemini configuration:** If you want model synthesis or embeddings, create a private key at https://aistudio.google.com/ and set it in `.env`. Never commit the key. Without it, keyword retrieval and evidence-only local fallbacks remain available.
+**Optional Groq configuration:** If you want model synthesis or embeddings, create a private key at https://aistudio.google.com/ and set it in `.env`. Never commit the key. Without it, keyword retrieval and evidence-only local fallbacks remain available.
 
 **How to generate NEXTAUTH_SECRET:**
 ```bash
@@ -387,8 +387,8 @@ Use the repository's existing Git clone and remote; do not run `git init` inside
    - `NEXTAUTH_SECRET` = strong, unique secret
    - `NEXTAUTH_URL` = exact public HTTPS origin
    - `CRON_SECRET` = strong secret for the scheduled job-recovery endpoint
-   - `GEMINI_API_KEY` = optional; omit it for evidence-only fallbacks
-   - `GEMINI_MODEL`, `GEMINI_PRO_MODEL`, and `GEMINI_EMBEDDING_MODEL` = optional model configuration
+   - `GROQ_API_KEY` = optional; omit it for evidence-only fallbacks
+   - `GROQ_MODEL` / `GROQ_MODEL_PRO` = optional model configuration; `EMBEDDING_*` = optional separate embeddings provider (Groq has no embeddings API)
 3. Deploy and verify the health endpoint, sign-in, uploads, research, and reports.
 
 **Step 5: Apply database migrations and configure the worker**
@@ -419,7 +419,7 @@ Railway may host the app and PostgreSQL; check current pricing, networking, buil
 3. Configure the environment variables listed above and deploy.
 4. Confirm that the selected plan supports the required scheduled worker; otherwise configure an external scheduler.
 
-For every host, back up and migrate the intended database using the migration guidance above, then schedule `GET /api/worker/documents` with `Authorization: Bearer $CRON_SECRET`. Use private environment variables, not source files, for credentials. If Gemini is enabled, review the provider's data-handling terms before uploading confidential documents.
+For every host, back up and migrate the intended database using the migration guidance above, then schedule `GET /api/worker/documents` with `Authorization: Bearer $CRON_SECRET`. Use private environment variables, not source files, for credentials. If Groq is enabled, review the provider's data-handling terms before uploading confidential documents.
 
 ---
 
@@ -477,9 +477,9 @@ In local development, sign in and click "Load Demo Data" on the Dashboard (or us
 
 ## 11. TROUBLESHOOTING
 
-### Gemini API key is not configured
+### Groq API key is not configured
 - Core local extraction, keyword retrieval, deterministic risk checks, benchmarks, and evidence-only report/chat fallbacks remain available
-- Add `GEMINI_API_KEY` from https://aistudio.google.com/ only if you want model analysis or semantic embeddings
+- Add `GROQ_API_KEY` from https://aistudio.google.com/ only if you want model analysis or semantic embeddings
 - Keep the key private and restart the app after changing `.env`
 
 ### Database connection error
@@ -494,7 +494,7 @@ In local development, sign in and click "Load Demo Data" on the Dashboard (or us
 ### Documents stuck in "processing" status
 - Processing is sequential and durable; check document status and job errors in the database/logs
 - Confirm the `/api/worker/documents` Cron is scheduled with `Authorization: Bearer $CRON_SECRET`
-- Extraction and deterministic risk checks have local fallbacks and do not require Gemini
+- Extraction and deterministic risk checks have local fallbacks and do not require Groq
 - Failed jobs are retried with backoff, then marked failed/partial for manual review
 
 ### Build errors
@@ -525,4 +525,4 @@ Run `npm run lint` to find ESLint issues
 ---
 
 *FinResearch AI — Multi-Agent Financial Analysis System*
-*Built with Next.js, Drizzle ORM, PostgreSQL, and Google Gemini AI*
+*Built with Next.js, Drizzle ORM, PostgreSQL, and Groq AI*

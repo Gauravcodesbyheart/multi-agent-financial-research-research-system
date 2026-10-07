@@ -224,7 +224,7 @@ export default function DocumentDetailPage() {
           {metrics.length === 0 ? (
             <div className="text-center py-12">
               <BarChart2 className="w-12 h-12 text-slate-200 mx-auto mb-3" />
-              <p className="text-slate-400 text-sm">No evidence-backed financial metrics were extracted. Verify the document contains selectable text and explicitly reports the values; Gemini enrichment is optional.</p>
+              <p className="text-slate-400 text-sm">No evidence-backed financial metrics were extracted. Verify the document contains selectable text and explicitly reports the values; AI enrichment is optional.</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

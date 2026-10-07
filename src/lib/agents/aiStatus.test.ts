@@ -2,72 +2,127 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CHAT_MODEL_FALLBACKS,
+  DEFAULT_LLM_BASE_URL,
   buildModelCandidates,
   describeAiUnavailable,
   getAiStatus,
-  isAiConfigured,
+  getEmbeddingConfig,
+  getLlmBaseUrl,
+  isEmbeddingConfigured,
+  isLlmConfigured,
   recordAiFailure,
   recordAiSuccess,
 } from "./aiStatus";
+import { parseJsonResponse } from "./llmClient";
+
+/** Run a callback with a mutated environment, restoring it afterwards. */
+function withEnv(vars: Record<string, string | undefined>, run: () => void) {
+  const original: Record<string, string | undefined> = {};
+  for (const key of Object.keys(vars)) original[key] = process.env[key];
+  try {
+    for (const [key, value] of Object.entries(vars)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    run();
+  } finally {
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+test("Groq is the default provider and needs no configuration to know its endpoint", () => {
+  withEnv({ LLM_BASE_URL: undefined, GROQ_API_KEY: "gsk_test_key", LLM_API_KEY: undefined }, () => {
+    assert.equal(getLlmBaseUrl(), DEFAULT_LLM_BASE_URL);
+    assert.match(getLlmBaseUrl(), /api\.groq\.com\/openai\/v1$/);
+    assert.equal(isLlmConfigured(), true);
+  });
+});
+
+test("LLM_API_KEY works as a generic alias so other providers can be swapped in", () => {
+  withEnv({ GROQ_API_KEY: undefined, LLM_API_KEY: "sk-other-provider" }, () => {
+    assert.equal(isLlmConfigured(), true);
+  });
+});
 
 test("model candidates keep the configured model first and never duplicate entries", () => {
-  const candidates = buildModelCandidates("gemini-3.8-flash");
-  assert.equal(candidates[0], "gemini-3.8-flash");
+  const candidates = buildModelCandidates("openai/gpt-oss-120b");
+  assert.equal(candidates[0], "openai/gpt-oss-120b");
   assert.equal(candidates.length, new Set(candidates).size, "candidates must be unique");
   assert.ok(candidates.length > 1, "a fallback must always be available");
 });
 
-test("a retired or unknown configured model still has known-good fallbacks after it", () => {
-  const candidates = buildModelCandidates("gemini-does-not-exist");
-  assert.equal(candidates[0], "gemini-does-not-exist");
+test("a decommissioned model id still has known-good Groq fallbacks after it", () => {
+  const candidates = buildModelCandidates("mixtral-8x7b-32768");
+  assert.equal(candidates[0], "mixtral-8x7b-32768");
   assert.ok(candidates.includes(CHAT_MODEL_FALLBACKS[0]));
-  assert.ok(candidates.length >= 2);
+  assert.ok(candidates.includes("openai/gpt-oss-120b"));
 });
 
 test("placeholder API keys are treated as unconfigured", () => {
-  const original = process.env.GEMINI_API_KEY;
-  try {
-    delete process.env.GEMINI_API_KEY;
-    assert.equal(isAiConfigured(), false, "an absent key is unconfigured");
-
-    process.env.GEMINI_API_KEY = "   ";
-    assert.equal(isAiConfigured(), false, "a blank key is unconfigured");
-
-    process.env.GEMINI_API_KEY = "AIzaSyDemoKeyFromTheReadme";
-    assert.equal(isAiConfigured(), false, "a template placeholder is unconfigured");
-
-    process.env.GEMINI_API_KEY = "AIzaSyRealLookingKeyValue123";
-    assert.equal(isAiConfigured(), true, "a real-looking key is configured");
-  } finally {
-    if (original === undefined) delete process.env.GEMINI_API_KEY;
-    else process.env.GEMINI_API_KEY = original;
-  }
+  withEnv({ GROQ_API_KEY: undefined, LLM_API_KEY: undefined }, () => {
+    assert.equal(isLlmConfigured(), false, "an absent key is unconfigured");
+  });
+  withEnv({ GROQ_API_KEY: "   ", LLM_API_KEY: undefined }, () => {
+    assert.equal(isLlmConfigured(), false, "a blank key is unconfigured");
+  });
+  withEnv({ GROQ_API_KEY: "gsk_xxxxxxxx", LLM_API_KEY: undefined }, () => {
+    assert.equal(isLlmConfigured(), false, "a documentation placeholder is unconfigured");
+  });
+  withEnv({ GROQ_API_KEY: "gsk_1a2b3c4d5e6f7g8h", LLM_API_KEY: undefined }, () => {
+    assert.equal(isLlmConfigured(), true, "a real-looking key is configured");
+  });
 });
 
 test("a missing key explains the fix instead of blaming the documents", () => {
-  const original = process.env.GEMINI_API_KEY;
-  try {
-    delete process.env.GEMINI_API_KEY;
+  withEnv({ GROQ_API_KEY: undefined, LLM_API_KEY: undefined }, () => {
     const reason = describeAiUnavailable();
-    assert.match(reason, /GEMINI_API_KEY/);
+    assert.match(reason, /GROQ_API_KEY/);
     assert.match(reason, /retrieval/i, "the message should say retrieval still works");
-  } finally {
-    if (original === undefined) delete process.env.GEMINI_API_KEY;
-    else process.env.GEMINI_API_KEY = original;
-  }
+  });
 });
 
-test("health status reports unconfigured state and records provider failures", () => {
-  const original = process.env.GEMINI_API_KEY;
-  try {
-    delete process.env.GEMINI_API_KEY;
+test("embeddings stay off unless a dedicated provider is fully configured", () => {
+  const base = { EMBEDDING_BASE_URL: undefined, EMBEDDING_API_KEY: undefined, EMBEDDING_MODEL: undefined };
+  withEnv(base, () => {
+    assert.equal(isEmbeddingConfigured(), false);
+    assert.equal(getEmbeddingConfig(), null);
+  });
+  // Groq has no embeddings API, so a Groq key alone must NOT enable semantic search.
+  withEnv({ ...base, GROQ_API_KEY: "gsk_1a2b3c4d5e6f7g8h" }, () => {
+    assert.equal(isEmbeddingConfigured(), false, "Groq alone cannot provide embeddings");
+  });
+  withEnv({ ...base, EMBEDDING_BASE_URL: "https://api.openai.com/v1", EMBEDDING_API_KEY: "sk-abc" }, () => {
+    assert.equal(isEmbeddingConfigured(), false, "a model id is also required");
+  });
+  withEnv(
+    {
+      ...base,
+      EMBEDDING_BASE_URL: "https://api.openai.com/v1/",
+      EMBEDDING_API_KEY: "sk-abc",
+      EMBEDDING_MODEL: "text-embedding-3-small",
+    },
+    () => {
+      assert.equal(isEmbeddingConfigured(), true);
+      assert.equal(getEmbeddingConfig()?.model, "text-embedding-3-small");
+      assert.equal(getEmbeddingConfig()?.baseUrl, "https://api.openai.com/v1", "trailing slash is trimmed");
+    },
+  );
+});
+
+test("health status reports provider, unconfigured state, and records failures", () => {
+  withEnv({ GROQ_API_KEY: undefined, LLM_API_KEY: undefined }, () => {
     const unconfigured = getAiStatus();
     assert.equal(unconfigured.configured, false);
     assert.equal(unconfigured.state, "unconfigured");
     assert.equal(unconfigured.lastError, null);
+    assert.equal(unconfigured.provider, "Groq");
+  });
 
-    process.env.GEMINI_API_KEY = "AIzaSyRealLookingKeyValue123";
-    recordAiFailure("404 models/gemini-3.6-flash is not found");
+  withEnv({ GROQ_API_KEY: "gsk_1a2b3c4d5e6f7g8h", LLM_API_KEY: undefined }, () => {
+    recordAiFailure("HTTP 404 model decommissioned");
     const degraded = getAiStatus();
     assert.equal(degraded.configured, true);
     assert.equal(degraded.state, "degraded");
@@ -75,8 +130,14 @@ test("health status reports unconfigured state and records provider failures", (
 
     recordAiSuccess();
     assert.equal(getAiStatus().state, "ready", "a later success clears the degraded state");
-  } finally {
-    if (original === undefined) delete process.env.GEMINI_API_KEY;
-    else process.env.GEMINI_API_KEY = original;
-  }
+    assert.equal(getAiStatus().lastError, null);
+  });
+});
+
+test("JSON parsing tolerates fences and prose wrappers from chat models", () => {
+  assert.deepEqual(parseJsonResponse('{"a":1}'), { a: 1 });
+  assert.deepEqual(parseJsonResponse('```json\n{"a":1}\n```'), { a: 1 });
+  assert.deepEqual(parseJsonResponse('Here is the JSON:\n{"a":1}\nHope that helps!'), { a: 1 });
+  assert.deepEqual(parseJsonResponse('[{"a":1}]'), [{ a: 1 }]);
+  assert.throws(() => parseJsonResponse("not json at all"), /not valid JSON/);
 });

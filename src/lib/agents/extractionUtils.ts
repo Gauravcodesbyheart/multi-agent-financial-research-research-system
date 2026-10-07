@@ -31,7 +31,10 @@ export interface LocalExtractedMetrics {
 }
 
 const LABELS: Record<Exclude<keyof LocalExtractedMetrics, "fiscal_year" | "fiscal_period" | "metric_evidence" | "raw_metrics">, RegExp> = {
-  revenue: /^\s*(?:total\s+net\s+sales|total\s+sales|total\s+revenue|total\s+revenues|net\s+sales|revenue)\s*[:—-]/i,
+  // Covers the common income-statement wordings: "Total net revenue", "Net revenue",
+  // "Total revenue", "Net sales", "Total net sales". Missing variants here silently
+  // zeroes out revenue for any filing that uses them.
+  revenue: /^\s*(?:total\s+net\s+sales|total\s+sales|total\s+net\s+revenues?|total\s+revenues?|net\s+sales|net\s+revenues?|revenues?)\s*[:—-]/i,
   revenue_growth: /\b(?:revenues?|net sales)\b.*\b(?:growth|increase|decrease|decline|change)\b/i,
   gross_profit: /^\s*gross\s+profit\s*[:—-]/i,
   gross_margin: /\bgross\s+margin\b/i,

@@ -10,7 +10,7 @@ export async function GET() {
     return NextResponse.json({
       // "degraded" means the app is up but the AI-backed agents cannot synthesize
       // answers (missing key or provider error) and are falling back to local logic.
-      status: ai.state === "ready" ? "ok" : ai.state === "degraded" ? "degraded" : "ok",
+      status: ai.state === "degraded" ? "degraded" : "ok",
       app: "FinResearch AI",
       version: "1.0.0",
       database: "connected",
@@ -24,7 +24,7 @@ export async function GET() {
       status: "error",
       error: "Database connection failed",
       ai,
-      hint: "Check that DATABASE_URL is reachable and that `npm run db:push` has been applied.",
+      hint: "Check that DATABASE_URL is reachable (Neon: use the pooled -pooler host with ?sslmode=require) and that migrations have been applied.",
     }, { status: 500 });
   }
 }

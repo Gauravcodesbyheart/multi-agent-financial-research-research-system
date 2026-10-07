@@ -2,7 +2,7 @@
 import { db } from "@/db";
 import { analysisReports, financialMetrics, riskFlags, companies, documents, agentLogs } from "@/db/schema";
 import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
-import { DEFAULT_GEMINI_PRO_MODEL, generateWithGemini } from "./gemini";
+import { DEFAULT_LLM_PRO_MODEL, generateWithLlm } from "./llmClient";
 
 function extractMarkdownSection(markdown: string, heading: string): string | undefined {
   const lines = markdown.split(/\r?\n/);
@@ -178,7 +178,7 @@ Write in professional analyst prose. Be specific with numbers. Cite data directl
 
     let fullReport: string;
     try {
-      fullReport = await generateWithGemini(reportPrompt, undefined, DEFAULT_GEMINI_PRO_MODEL);
+      fullReport = await generateWithLlm(reportPrompt, undefined, DEFAULT_LLM_PRO_MODEL);
     } catch (error) {
       fullReport = createLocalReport(companyProfiles, String(error));
     }
@@ -316,7 +316,7 @@ ${risks}`;
 
   const companyNames = profiles.map((profile) => profile.company).join(", ") || "the selected companies";
   return `# EXECUTIVE SUMMARY
-This evidence-only report covers ${companyNames}. Gemini report generation was unavailable, so this summary makes no unsupported performance or investment claims. The Key Financials table records the latest stored metric set for each selected company and names its source document; confirm periods and values in the original filings.
+This evidence-only report covers ${companyNames}. AI report generation was unavailable, so this summary makes no unsupported performance or investment claims. The Key Financials table records the latest stored metric set for each selected company and names its source document; confirm periods and values in the original filings.
 
 ${renderKeyFinancialsSection(profiles)}
 
@@ -335,5 +335,5 @@ ${companySections || "No risk information is available."}
 - Treat red flags as screening signals, not investment advice.
 
 # DISCLAIMER
-This local report uses stored document-derived data only. Gemini detail was unavailable (${reason}). It is informational and not investment advice.`;
+This local report uses stored document-derived data only. AI narrative detail was unavailable (${reason}). It is informational and not investment advice.`;
 }

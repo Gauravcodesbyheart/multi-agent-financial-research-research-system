@@ -2,7 +2,7 @@
 import { db } from "@/db";
 import { financialMetrics, companies, riskFlags, agentLogs, documents } from "@/db/schema";
 import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
-import { generateWithGemini } from "./gemini";
+import { generateWithLlm } from "./llmClient";
 
 export async function generateBenchmarkInsights(
   companyIds: string[],
@@ -91,7 +91,7 @@ Compare revenue/growth, profitability, leverage/liquidity, and risk counts. Name
 
     let insights: string;
     try {
-      insights = await generateWithGemini(prompt);
+      insights = await generateWithLlm(prompt);
     } catch (error) {
       insights = createLocalBenchmarkInsights(companyContext);
       await db.insert(agentLogs).values({

@@ -323,7 +323,7 @@ endobj
 endobj
 6 0 obj
 <<
-/Length 26297
+/Length 26337
 >>
 stream
 0.7086614173228347 w
@@ -846,7 +846,7 @@ BT
 9.1999999999999993 TL
 0.137 0.176 0.235 rg
 62.3622047244094517 177.8033858267720007 Td
-(        %% % %    O p t i o n a l   G o o g l e   G e m i n i   A P I) Tj
+(        %% % %    O p t i o n a l   G r o q   A P I) Tj
 ET
 0.95 0.96 0.98 rg
 55.2755905511811108 175.8191338582681169 m
@@ -865,7 +865,7 @@ BT
 9.1999999999999993 TL
 0.137 0.176 0.235 rg
 62.3622047244094517 165.8978740157484708 Td
-(        %              %% %    g e m i n i - 3 . 6 - f l a s h   \( a n a l y s i s   a n d   n a r r a t i v e   g e n e r a t i o n \)) Tj
+(        %              %% %    G r o q   o p e n a i / g p t - o s s - 1 2 0 b   \( a n a l y s i s   a n d   n a r r a t i v e   g e n e r a t i o n \)) Tj
 ET
 0.95 0.96 0.98 rg
 55.2755905511811108 163.9136220472445302 m
@@ -884,7 +884,7 @@ BT
 9.1999999999999993 TL
 0.137 0.176 0.235 rg
 62.3622047244094517 153.9923622047248273 Td
-(        %              %% %    g e m i n i - e m b e d d i n g - 0 0 1   \( o p t i o n a l   s e m a n t i c   s e a r c h \)) Tj
+(        %              %% %    a n y   O p e n A I - c o m p a t i b l e   e m b e d d i n g s   p r o v i d e r   \( o p t i o n a l   s e m a n t i c   s e a r c h \)) Tj
 ET
 0.95 0.96 0.98 rg
 55.2755905511811108 152.0081102362209435 m
@@ -1026,7 +1026,7 @@ endobj
 endobj
 8 0 obj
 <<
-/Length 8177
+/Length 8186
 >>
 stream
 0.7086614173228347 w
@@ -1303,7 +1303,7 @@ BT
 10.9249999999999989 TL
 0.165 0.204 0.267 rg
 51.0236220472441033 292.819133858267719 Td
-(How: Uses Gemini JSON extraction when configured, validates each metric against an exact quote and matching) Tj
+(How: Uses Groq JSON extraction when configured, validates each metric against an exact quote and matching) Tj
 ET
 BT
 /F1 9.5 Tf
@@ -1383,14 +1383,14 @@ BT
 10.9249999999999989 TL
 0.165 0.204 0.267 rg
 51.0236220472441033 79.7955118110239709 Td
-(What it does: Optionally creates semantic vectors for document chunks using Gemini) Tj
+(What it does: Optionally creates semantic vectors for document chunks using Groq embeddings.) Tj
 ET
 BT
 /F1 9.5 Tf
 10.9249999999999989 TL
 0.165 0.204 0.267 rg
 51.0236220472441033 66.4726771653546393 Td
-(embeddings. Vectors are stored in JSONB with a model identifier; keyword search remains) Tj
+(Vectors are stored in JSONB with a model identifier; keyword search remains available if) Tj
 ET
 BT
 /F1 8 Tf
@@ -1418,7 +1418,7 @@ endobj
 endobj
 10 0 obj
 <<
-/Length 7890
+/Length 7873
 >>
 stream
 0.7086614173228347 w
@@ -1428,7 +1428,7 @@ BT
 9.1999999999999993 TL
 0.471 0.51 0.569 rg
 51.0236220472441033 785.1970866141732586 Td
-(available if embeddings are not configured or compatible.) Tj
+(embeddings are not configured or compatible.) Tj
 ET
 BT
 /F2 10.5 Tf
@@ -1501,7 +1501,7 @@ BT
 10.9249999999999989 TL
 0.165 0.204 0.267 rg
 51.0236220472441033 585.4962992125983874 Td
-(percentage units must match the quote. When Gemini is unavailable, the agent returns relevant retrieved excerpts) Tj
+(percentage units must match the quote. When Groq is unavailable, the agent returns relevant retrieved excerpts) Tj
 ET
 BT
 /F1 9.5 Tf
@@ -1541,7 +1541,7 @@ BT
 10.9249999999999989 TL
 0.165 0.204 0.267 rg
 51.0236220472441033 484.6537795275589247 Td
-(and source filenames, then adds detailed analysis when Gemini is available. The table remains) Tj
+(and source filenames, then adds detailed analysis when Groq is available. The table remains) Tj
 ET
 BT
 /F1 9.5 Tf
@@ -1801,7 +1801,7 @@ endobj
 endobj
 12 0 obj
 <<
-/Length 5933
+/Length 5982
 >>
 stream
 0.7086614173228347 w
@@ -1823,7 +1823,7 @@ BT
 10.5799999999999983 TL
 0.165 0.204 0.267 rg
 68.031496062992133 748.9844881889763428 Td
-(Google Gemini API \(@google/generative-ai\), optional for model analysis) Tj
+(Groq API \(@google/generative-ai\), optional for model analysis) Tj
 ET
 BT
 /F2 9.2 Tf
@@ -1837,14 +1837,14 @@ BT
 10.9249999999999989 TL
 0.165 0.204 0.267 rg
 51.0236220472441033 732.8270078740157487 Td
-(- gemini-3.6-flash: configurable default for extraction, risk review, research, benchmarking, and reports) Tj
+(- openai/gpt-oss-120b: configurable Groq default for extraction, risk review, research, benchmarking, and reports) Tj
 ET
 BT
 /F1 9.5 Tf
 10.9249999999999989 TL
 0.165 0.204 0.267 rg
 51.0236220472441033 713.8348818897637784 Td
-(- gemini-embedding-001: optional semantic retrieval) Tj
+(- Optional embeddings provider \(EMBEDDING_*\): semantic retrieval; Groq itself has no embeddings API) Tj
 ET
 BT
 /F2 10.5 Tf
@@ -3284,7 +3284,7 @@ endobj
 endobj
 20 0 obj
 <<
-/Length 21117
+/Length 21157
 >>
 stream
 0.7086614173228347 w
@@ -3420,7 +3420,7 @@ BT
 9.1999999999999993 TL
 0.137 0.176 0.235 rg
 62.3622047244094517 713.7640157480313974 Td
-(GEMINI_API_KEY=) Tj
+(GROQ_API_KEY=) Tj
 ET
 0.95 0.96 0.98 rg
 55.2755905511811108 711.7797637795274568 m
@@ -3439,7 +3439,7 @@ BT
 9.1999999999999993 TL
 0.137 0.176 0.235 rg
 62.3622047244094517 701.8585039370077538 Td
-(GEMINI_MODEL=gemini-3.6-flash) Tj
+(GROQ_MODEL=openai/gpt-oss-120b) Tj
 ET
 0.95 0.96 0.98 rg
 55.2755905511811108 699.8742519685038133 m
@@ -3458,7 +3458,7 @@ BT
 9.1999999999999993 TL
 0.137 0.176 0.235 rg
 62.3622047244094517 689.9529921259841103 Td
-(GEMINI_PRO_MODEL=gemini-3.6-flash) Tj
+(GROQ_MODEL_PRO=openai/gpt-oss-120b) Tj
 ET
 0.95 0.96 0.98 rg
 55.2755905511811108 687.9687401574802834 m
@@ -3477,7 +3477,7 @@ BT
 9.1999999999999993 TL
 0.137 0.176 0.235 rg
 62.3622047244094517 678.0474803149605805 Td
-(GEMINI_EMBEDDING_MODEL=gemini-embedding-001) Tj
+(# EMBEDDING_BASE_URL / EMBEDDING_API_KEY / EMBEDDING_MODEL = optional semantic search) Tj
 ET
 0.95 0.96 0.98 rg
 55.2755905511811108 676.0632283464565262 m
@@ -3598,7 +3598,7 @@ BT
 10.9249999999999989 TL
 0.165 0.204 0.267 rg
 51.0236220472441033 580.5356692913385359 Td
-(Optional Gemini configuration: If you want model synthesis or embeddings, create a private key at) Tj
+(Optional Groq configuration: If you want model synthesis or embeddings, create a private key at) Tj
 ET
 BT
 /F1 9.5 Tf
@@ -3862,7 +3862,7 @@ endobj
 endobj
 22 0 obj
 <<
-/Length 7557
+/Length 7718
 >>
 stream
 0.7086614173228347 w
@@ -4169,41 +4169,48 @@ BT
 10.9249999999999989 TL
 0.165 0.204 0.267 rg
 51.0236220472441033 176.2443307086617779 Td
-(- GEMINI_API_KEY = optional; omit it for evidence-only fallbacks) Tj
+(- GROQ_API_KEY = optional; omit it for evidence-only fallbacks) Tj
 ET
 BT
 /F1 9.5 Tf
 10.9249999999999989 TL
 0.165 0.204 0.267 rg
 51.0236220472441033 157.2522047244098076 Td
-(- GEMINI_MODEL, GEMINI_PRO_MODEL, and GEMINI_EMBEDDING_MODEL = optional model configuration) Tj
+(- GROQ_MODEL / GROQ_MODEL_PRO = optional model configuration; EMBEDDING_* = optional separate) Tj
+ET
+BT
+/F1 9.5 Tf
+10.9249999999999989 TL
+0.165 0.204 0.267 rg
+51.0236220472441033 143.9293700787405896 Td
+(embeddings provider \(Groq has no embeddings API\)) Tj
 ET
 BT
 /F1 9.2 Tf
 10.5799999999999983 TL
 0.165 0.204 0.267 rg
-68.031496062992133 138.2600787401578373 Td
+68.031496062992133 124.9372440944886193 Td
 (Deploy and verify the health endpoint, sign-in, uploads, research, and reports.) Tj
 ET
 BT
 /F2 9.2 Tf
 10.5799999999999983 TL
 0.09 0.267 0.471 rg
-51.0236220472441033 138.2600787401578373 Td
+51.0236220472441033 124.9372440944885057 Td
 (3. ) Tj
 ET
 BT
 /F1 9.5 Tf
 10.9249999999999989 TL
 0.165 0.204 0.267 rg
-51.0236220472441033 116.4333070866146045 Td
+51.0236220472441033 103.1104724409452729 Td
 (Step 5: Apply database migrations and configure the worker) Tj
 ET
 BT
 /F1 9.5 Tf
 10.9249999999999989 TL
 0.165 0.204 0.267 rg
-51.0236220472441033 97.4411811023626342 Td
+51.0236220472441033 84.1183464566933026 Td
 (For a new, empty database, run migrations once from a trusted machine or CI job:) Tj
 ET
 BT
@@ -4232,7 +4239,7 @@ endobj
 endobj
 24 0 obj
 <<
-/Length 8016
+/Length 8014
 >>
 stream
 0.7086614173228347 w
@@ -4481,7 +4488,7 @@ BT
 10.9249999999999989 TL
 0.165 0.204 0.267 rg
 51.0236220472441033 313.3703149606299121 Td
-(source files, for credentials. If Gemini is enabled, review the provider's data-handling terms before uploading) Tj
+(source files, for credentials. If Groq is enabled, review the provider's data-handling terms before uploading) Tj
 ET
 BT
 /F1 9.5 Tf
@@ -5021,7 +5028,7 @@ endobj
 endobj
 28 0 obj
 <<
-/Length 8068
+/Length 8062
 >>
 stream
 0.7086614173228347 w
@@ -5139,7 +5146,7 @@ BT
 12.0749999999999993 TL
 0.157 0.204 0.275 rg
 51.0236220472441033 558.9214960629919915 Td
-(Gemini API key is not configured) Tj
+(Groq API key is not configured) Tj
 ET
 0.84 0.87 0.91 RG
 0.7086614173228347 w
@@ -5172,7 +5179,7 @@ BT
 10.5799999999999983 TL
 0.165 0.204 0.267 rg
 68.031496062992133 498.8978740157479024 Td
-(Add GEMINI_API_KEY from https://aistudio.google.com/ only if you want model analysis or semantic) Tj
+(Add GROQ_API_KEY from https://aistudio.google.com/ only if you want model analysis or semantic) Tj
 ET
 BT
 /F1 9.2 Tf
@@ -5348,7 +5355,7 @@ BT
 10.5799999999999983 TL
 0.165 0.204 0.267 rg
 68.031496062992133 201.1892125984252289 Td
-(Extraction and deterministic risk checks have local fallbacks and do not require Gemini) Tj
+(Extraction and deterministic risk checks have local fallbacks and do not require Groq) Tj
 ET
 BT
 /F2 9.2 Tf
@@ -5430,7 +5437,7 @@ endobj
 endobj
 30 0 obj
 <<
-/Length 6384
+/Length 6375
 >>
 stream
 0.7086614173228347 w
@@ -5739,7 +5746,7 @@ BT
 10.9249999999999989 TL
 0.165 0.204 0.267 rg
 51.0236220472441033 284.7403937007874219 Td
-(*Built with Next.js, Drizzle ORM, PostgreSQL, and Google Gemini AI*) Tj
+(*Built with Next.js, Drizzle ORM, PostgreSQL, and Groq AI*) Tj
 ET
 BT
 /F1 8 Tf
@@ -5927,7 +5934,7 @@ endobj
 45 0 obj
 <<
 /Producer (jsPDF 4.2.1)
-/CreationDate (D:20261004185042-00'00')
+/CreationDate (D:20261007204753-00'00')
 >>
 endobj
 46 0 obj
@@ -5941,59 +5948,59 @@ endobj
 xref
 0 47
 0000000000 65535 f 
-0000145127 00000 n 
-0000147038 00000 n 
+0000145392 00000 n 
+0000147303 00000 n 
 0000000015 00000 n 
 0000000152 00000 n 
 0000006118 00000 n 
 0000006255 00000 n 
-0000032605 00000 n 
-0000032742 00000 n 
-0000040971 00000 n 
-0000041109 00000 n 
-0000049052 00000 n 
-0000049191 00000 n 
-0000055177 00000 n 
-0000055316 00000 n 
-0000061774 00000 n 
-0000061913 00000 n 
-0000070822 00000 n 
-0000070961 00000 n 
-0000084590 00000 n 
-0000084729 00000 n 
-0000105900 00000 n 
-0000106039 00000 n 
-0000113649 00000 n 
-0000113788 00000 n 
-0000121857 00000 n 
-0000121996 00000 n 
-0000130291 00000 n 
-0000130430 00000 n 
-0000138551 00000 n 
-0000138690 00000 n 
-0000145273 00000 n 
-0000145399 00000 n 
-0000145530 00000 n 
+0000032645 00000 n 
+0000032782 00000 n 
+0000041020 00000 n 
+0000041158 00000 n 
+0000049084 00000 n 
+0000049223 00000 n 
+0000055258 00000 n 
+0000055397 00000 n 
+0000061855 00000 n 
+0000061994 00000 n 
+0000070903 00000 n 
+0000071042 00000 n 
+0000084671 00000 n 
+0000084810 00000 n 
+0000106021 00000 n 
+0000106160 00000 n 
+0000113931 00000 n 
+0000114070 00000 n 
+0000122137 00000 n 
+0000122276 00000 n 
+0000130571 00000 n 
+0000130710 00000 n 
+0000138825 00000 n 
+0000138964 00000 n 
+0000145538 00000 n 
 0000145664 00000 n 
-0000145802 00000 n 
-0000145926 00000 n 
-0000146055 00000 n 
-0000146187 00000 n 
-0000146323 00000 n 
-0000146451 00000 n 
-0000146578 00000 n 
-0000146707 00000 n 
-0000146840 00000 n 
-0000146942 00000 n 
-0000147291 00000 n 
-0000147377 00000 n 
+0000145795 00000 n 
+0000145929 00000 n 
+0000146067 00000 n 
+0000146191 00000 n 
+0000146320 00000 n 
+0000146452 00000 n 
+0000146588 00000 n 
+0000146716 00000 n 
+0000146843 00000 n 
+0000146972 00000 n 
+0000147105 00000 n 
+0000147207 00000 n 
+0000147556 00000 n 
+0000147642 00000 n 
 trailer
 <<
 /Size 47
 /Root 46 0 R
 /Info 45 0 R
-/ID [ <4313AF2A5D8B9BB63BD455B86D96DCC5> <4313AF2A5D8B9BB63BD455B86D96DCC5> ]
+/ID [ <7636FC0CA7E55F460414C295C38894BA> <7636FC0CA7E55F460414C295C38894BA> ]
 >>
 startxref
-147481
+147746
 %%EOF

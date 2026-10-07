@@ -2,10 +2,10 @@
 import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { agentLogs, documents, researchSessions } from "@/db/schema";
-import { DEFAULT_GEMINI_MODEL, generateJSON } from "./gemini";
+import { DEFAULT_LLM_MODEL, generateJsonLlm } from "./llmClient";
 import { searchDocumentCollection, type RetrievedChunk } from "./documentAgent";
 import { tryCreateQueryEmbedding } from "./embeddingAgent";
-import { describeAiUnavailable, isAiConfigured } from "./aiStatus";
+import { describeAiUnavailable, isLlmConfigured } from "./aiStatus";
 import { decomposeResearchQuestion, validateGroundedResearchAnswer } from "./analysisUtils";
 
 export interface Citation {
@@ -57,7 +57,7 @@ function buildLocalResearchAnswer(
     `[${citation.citationId}] ${citation.documentName} — ${citation.section}, chunk ${citation.chunkIndex + 1}: "${citation.excerpt}"`
   ).join("\n\n");
   // Say why there is no synthesis (missing key vs. provider error) instead of a bare apology.
-  const reason = isAiConfigured()
+  const reason = isLlmConfigured()
     ? "AI synthesis failed for this request, so the retrieved passages are shown verbatim."
     : describeAiUnavailable();
   const answer = `I could not generate a synthesized answer for “${question}”. ${reason}\n\nThe passages below were retrieved from your documents; they are source evidence, not conclusions.\n\n${evidence}`;
@@ -177,7 +177,7 @@ RECENT CONVERSATION (context only; never cite or treat as evidence):
 ${historyText || "None"}
 
 Each step must have its own claims. Split compound reasoning into atomic claims. Every number in a claim must appear verbatim in at least one of its exact supporting quotes. When a comparison relies on multiple sources, cite and quote each one.`;
-    const rawResponse = await generateJSON<unknown>(prompt, systemPrompt, DEFAULT_GEMINI_MODEL);
+    const rawResponse = await generateJsonLlm<unknown>(prompt, systemPrompt, DEFAULT_LLM_MODEL);
     const validated = validateGroundedResearchAnswer(rawResponse, citations);
     if (!validated) throw new Error("Generated response did not pass source-quote and numeric citation validation");
 
@@ -204,7 +204,7 @@ Each step must have its own claims. Split compound reasoning into atomic claims.
       agentName: "Research Agent",
       action: "Answered with local evidence fallback",
       status: "partial",
-      details: `Gemini unavailable or failed citation validation: ${String(error).slice(0, 500)}`,
+      details: `AI model unavailable or failed citation validation: ${String(error).slice(0, 500)}`,
       duration: Date.now() - startedAt,
     });
     return fallback;

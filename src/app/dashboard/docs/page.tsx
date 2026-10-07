@@ -69,7 +69,7 @@ export default function DocsPage() {
                 { icon: FileText, title: "Document Processing", desc: "Upload 10-K filings, earnings transcripts, and annual reports. AI agents automatically parse, chunk, and index them." },
                 { icon: BarChart2, title: "Metric Extraction", desc: "Automatically extracts 25+ financial KPIs including revenue, margins, ratios, and cash flows from document text." },
                 { icon: AlertTriangle, title: "Risk Detection", desc: "Finds quote-backed disclosure signals and metric anomalies; cross-period alerts require comparable, source-matched values." },
-                { icon: TrendingUp, title: "Benchmarking", desc: "Compare latest stored metrics with fiscal periods and source documents; Gemini insights are optional." },
+                { icon: TrendingUp, title: "Benchmarking", desc: "Compare latest stored metrics with fiscal periods and source documents; Groq insights are optional." },
                 { icon: MessageSquare, title: "Research Agent", desc: "Conversational Q&A with exact source citations. Ask multi-part financial questions in plain English." },
                 { icon: BookOpen, title: "Report Generation", desc: "Compile all analysis into professional analyst-style research reports downloadable as text files." },
               ].map(({ icon: Icon, title, desc }) => (
@@ -138,11 +138,11 @@ export default function DocsPage() {
                 name: "Extraction Agent",
                 color: "from-violet-500 to-violet-600",
                 icon: BarChart2,
-                description: "Reads document text and uses Gemini AI to extract specific financial numbers into structured format.",
+                description: "Reads document text and uses Groq-hosted models to extract specific financial numbers into structured format.",
                 steps: [
                   "Use document text, capped to a beginning/end excerpt for large files",
                   "Build a structured prompt for supported metric fields",
-                  "Request JSON from Gemini 3.6 Flash when configured; otherwise use the local parser",
+                  "Request JSON from the configured Groq model; otherwise use the local parser",
                   "Keep metric values only when their quotes and numeric evidence match",
                   "Convert monetary values to millions USD",
                   "Convert percentages to decimal ratios (0.25 = 25%)",
@@ -159,7 +159,7 @@ export default function DocsPage() {
                 description: "Scans the document specifically looking for red flags, material risks, and anomalies.",
                 steps: [
                   "Run deterministic disclosure rules, metric anomaly checks, and comparable cross-period checks",
-                  "Optionally ask Gemini for additional risk findings",
+                  "Optionally ask the AI model for additional risk findings",
                   "Retain model findings only when source quotes and numeric claims validate",
                   "Store source text, severity, description, and review recommendation in risk_flags",
                 ],
@@ -171,7 +171,7 @@ export default function DocsPage() {
                 name: "Embedding Agent",
                 color: "from-cyan-500 to-sky-600",
                 icon: Brain,
-                description: "Optionally indexes document chunks with semantic vectors when Gemini is configured.",
+                description: "Optionally indexes document chunks with semantic vectors when a separate embeddings provider is configured (Groq has no embeddings API).",
                 steps: [
                   "Embed chunks in batches and store vectors plus model identifiers in JSONB",
                   "Use semantic ranking only when the full collection has compatible vectors",
@@ -191,7 +191,7 @@ export default function DocsPage() {
                   "Fetch only documents and metrics the signed-in user can access (plus demo fixtures)",
                   "Choose the latest fiscal metric per company and retain its source and period",
                   "Warn when fiscal periods differ or are missing",
-                  "Use Gemini insights when configured; otherwise show deterministic comparisons",
+                  "Use Groq insights when configured; otherwise show deterministic comparisons",
                   "Do not generate buy/sell recommendations",
                 ],
                 output: "Period-aware comparison with source filenames, metric rows, and risk counts",
@@ -224,7 +224,7 @@ export default function DocsPage() {
                 steps: [
                   "Gather accessible stored metrics and source-document names",
                   "Render the latest period per selected company in a Markdown table",
-                  "Generate detailed Gemini analysis when configured or an evidence-only local report otherwise",
+                  "Generate detailed AI analysis when configured or an evidence-only local report otherwise",
                   "Display the Executive Summary and render headings, lists, and financial tables in the report page",
                 ],
                 output: "Downloadable report with an Executive Summary and source/period-aware Key Financials table",
@@ -298,9 +298,9 @@ Next.js 16 App Router (Server)
     │       ├── researchAgent.ts    (Session-scoped cited retrieval)
     │       └── reportAgent.ts      (Executive Summary and Key Financials)
     │
-    ├── Google Gemini AI API
-    │       ├── gemini-3.8-flash    (Configurable: extraction, risk review, research, benchmarks, reports)
-    │       └── gemini-embedding-001 (Optional semantic vectors)
+    ├── Groq AI API (OpenAI-compatible)
+    │       └── openai/gpt-oss-120b  (Configurable: extraction, risk review, research, benchmarks, reports)
+    └── Optional embeddings provider (semantic vectors — Groq has none)
     │
     └── PostgreSQL Database (Drizzle ORM)
             ├── users                (Authentication)
@@ -488,13 +488,13 @@ Next.js 16 App Router (Server)
               },
               {
                 step: 4,
-                title: "Optional: Get a Gemini API Key",
+                title: "Required for AI answers: Get a Groq API Key",
                 content: "Without a key, evidence extraction, keyword retrieval, and transparent local fallbacks still work.\nFor model analysis or embeddings, create a key at https://aistudio.google.com/\nKeep the key private and never commit it to Git.",
               },
               {
                 step: 5,
                 title: "Configure .env file",
-                content: "Create .env in the project root (never commit it):\n\nDATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/app_db\nNEXTAUTH_SECRET=generate-with-openssl-rand-base64-32\nNEXTAUTH_URL=http://localhost:3000\n# Optional AI configuration\nGEMINI_API_KEY=\nGEMINI_MODEL=gemini-3.8-flash\nGEMINI_PRO_MODEL=gemini-3.8-flash\nGEMINI_EMBEDDING_MODEL=gemini-embedding-001\n# Required for scheduled recovery in production\nCRON_SECRET=\n# Only for deliberate production demo seeding\nSEED_SECRET=",
+                content: "Create .env in the project root (never commit it):\n\n# Neon pooled endpoint (host contains -pooler); keep ?sslmode=require\nDATABASE_URL=postgresql://user:password@ep-xxx-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require\n# Neon direct endpoint — used only by migrations\nDIRECT_URL=postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require\nNEXTAUTH_SECRET=generate-with-openssl-rand-base64-32\nNEXTAUTH_URL=http://localhost:3000\n# Groq AI configuration\nGROQ_API_KEY=gsk_your-key-from-console.groq.com\nGROQ_MODEL=openai/gpt-oss-120b\n# Optional: any OpenAI-compatible endpoint\n# LLM_BASE_URL=https://api.groq.com/openai/v1\n# Optional: semantic search needs a separate embeddings provider\n# EMBEDDING_BASE_URL=https://api.openai.com/v1\n# EMBEDDING_API_KEY=\n# EMBEDDING_MODEL=text-embedding-3-small\n# Required for scheduled recovery in production\nCRON_SECRET=\n# Only for deliberate production demo seeding\nSEED_SECRET=",
               },
               {
                 step: 6,
@@ -519,7 +519,7 @@ Next.js 16 App Router (Server)
           <div className="max-w-3xl space-y-6 animate-fade-in">
             <h1 className="text-2xl font-bold text-slate-900">Deployment Guide</h1>
             <p className="text-slate-500">Deploy with Vercel + Neon PostgreSQL or another Node.js host; review current provider limits and costs.</p>
-            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-4">Uploaded text is stored in PostgreSQL. If Gemini is configured, document excerpts and research prompts are sent to Google&apos;s API; review data-handling and contractual requirements before uploading confidential material.</p>
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-4">Uploaded text is stored in PostgreSQL. If a Groq API key is configured, document excerpts and research prompts are sent to Groq&apos;s API; review data-handling and contractual requirements before uploading confidential material.</p>
 
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
               <h2 className="font-bold text-emerald-800 mb-1">Recommended: Vercel + Neon</h2>
@@ -563,9 +563,9 @@ Next.js 16 App Router (Server)
                   "  NEXTAUTH_SECRET = a strong, unique secret",
                   "  NEXTAUTH_URL = your exact public HTTPS origin",
                   "  CRON_SECRET = a strong secret for scheduled job recovery",
-                  "  GEMINI_API_KEY = optional; without it, local evidence fallbacks remain available",
-                  "  GEMINI_MODEL / GEMINI_PRO_MODEL = optional configurable analysis models",
-                  "  GEMINI_EMBEDDING_MODEL = gemini-embedding-001 (optional semantic search)",
+                  "  GROQ_API_KEY = required for AI answers; without it, local evidence fallbacks remain available",
+                  "  GROQ_MODEL / GROQ_MODEL_PRO = optional configurable analysis models",
+                  "  EMBEDDING_* = optional separate embeddings provider (Groq has no embeddings API)",
                   "Deploy, then verify health, authentication, uploads, research, and reports",
                 ],
               },
@@ -634,7 +634,7 @@ Next.js 16 App Router (Server)
                 step: 5,
                 title: "Run Benchmarking",
                 desc: "Go to Benchmarking. Select 2-8 accessible companies and click 'Compare'. Review the side-by-side charts, source filenames, fiscal periods, and detailed comparison table.",
-                tip: "A Gemini key is optional; without it, deterministic comparisons still include periods, source documents, and risk counts."
+                tip: "A Groq key is optional; without it, deterministic comparisons still include periods, source documents, and risk counts."
               },
               {
                 step: 6,
@@ -645,7 +645,7 @@ Next.js 16 App Router (Server)
                 step: 7,
                 title: "Research Agent Chat",
                 desc: "Go to Research Agent. Select a session. Try asking: 'What is Apple's revenue growth compared to Microsoft?' You'll get a cited answer with exact source references.",
-                tip: "A Gemini key enables synthesis. Without one, retrieval shows matching document excerpts and citations—never canned sample statistics."
+                tip: "A Groq key enables synthesis. Without one, retrieval shows matching document excerpts and citations—never canned sample statistics."
               },
               {
                 step: 8,

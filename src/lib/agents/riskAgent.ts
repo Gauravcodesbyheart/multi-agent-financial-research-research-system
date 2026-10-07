@@ -2,7 +2,7 @@
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { agentLogs, documents, financialMetrics, riskFlags } from "@/db/schema";
-import { generateJSON } from "./gemini";
+import { generateJsonLlm } from "./llmClient";
 import {
   dedupeRiskFindings,
   detectFinancialTrendRisks,
@@ -129,18 +129,18 @@ export async function scanForRisks(
     ];
 
     let validatedModelFindings: RiskFinding[] = [];
-    let modelStatus = "Gemini not configured; deterministic checks used.";
+    let modelStatus = "AI model not configured; deterministic checks used.";
     try {
       const prompt = `Review this financial document for additional material risks not already covered by deterministic checks.
 Return a JSON array with fields risk_type, severity (critical/high/medium/low), title, description, source_text (an exact quote of at least 12 characters copied from this document), and recommendation.
 Do not fabricate a quote. Return [] if there are no additional supported findings.
 
 DOCUMENT TEXT:\n${content.length <= 30000 ? content : `${content.slice(0, 15000)}\n[Middle omitted]\n${content.slice(-15000)}`}`;
-      const modelItems = await generateJSON<unknown>(prompt, RISK_SYSTEM);
+      const modelItems = await generateJsonLlm<unknown>(prompt, RISK_SYSTEM);
       validatedModelFindings = validateModelRiskItems(modelItems, content);
       modelStatus = `Validated ${validatedModelFindings.length} additional model findings against source quotes.`;
     } catch (error) {
-      modelStatus = `Gemini unavailable; deterministic checks used. ${String(error).slice(0, 300)}`;
+      modelStatus = `AI model unavailable; deterministic checks used. ${String(error).slice(0, 300)}`;
     }
 
     const findings = dedupeRiskFindings([...deterministicFindings, ...validatedModelFindings]);

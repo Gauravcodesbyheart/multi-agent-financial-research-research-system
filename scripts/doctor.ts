@@ -10,7 +10,8 @@ import "dotenv/config";
 import { Pool } from "pg";
 import {
   getAiStatus,
-  isAiConfigured,
+  getEmbeddingConfig,
+  isLlmConfigured,
 } from "../src/lib/agents/aiStatus";
 
 type CheckResult = { name: string; ok: boolean; detail: string; fix?: string };
@@ -43,8 +44,18 @@ async function main() {
     "DATABASE_URL",
     Boolean(databaseUrl),
     databaseUrl ? `set (${databaseUrl.replace(/:[^:@/]*@/, ":***@")})` : "missing",
-    databaseUrl ? undefined : "Copy .env.example to .env and set DATABASE_URL.",
+    databaseUrl ? undefined : "Copy .env.example to .env and paste your Neon pooled connection string.",
   );
+
+  const directUrl = process.env.DIRECT_URL?.trim();
+  if (databaseUrl && /neon\.tech/i.test(databaseUrl)) {
+    check(
+      "DIRECT_URL (migrations)",
+      Boolean(directUrl),
+      directUrl ? "set — migrations will use the direct endpoint" : "not set — migrations will run through the pooled endpoint",
+      directUrl ? undefined : "Add DIRECT_URL (Neon direct, non-pooler host) so DDL is not sent through PgBouncer.",
+    );
+  }
 
   const secret = process.env.NEXTAUTH_SECRET?.trim();
   const secretOk = Boolean(secret && secret.length >= 16);
@@ -56,13 +67,41 @@ async function main() {
   );
 
   const ai = getAiStatus();
-  const aiOk = isAiConfigured();
+  const aiOk = isLlmConfigured();
   check(
-    "GEMINI_API_KEY",
+    "GROQ_API_KEY",
     aiOk,
-    aiOk ? `configured (model: ${ai.chatModel})` : "missing — every AI agent will use local fallbacks only",
-    aiOk ? undefined : "Create a key at https://aistudio.google.com/apikey and set GEMINI_API_KEY in .env.",
+    aiOk ? `configured — ${ai.provider}, model ${ai.chatModel}` : "missing — every AI agent will use local fallbacks only",
+    aiOk ? undefined : "Create a key at https://console.groq.com/keys and set GROQ_API_KEY in .env.",
   );
+
+  const embedding = getEmbeddingConfig();
+  check(
+    "Embeddings",
+    true,
+    embedding
+      ? `semantic search enabled (${embedding.model})`
+      : "not configured — keyword retrieval only (Groq has no embeddings API; this is optional)",
+    embedding ? undefined : "To enable, set EMBEDDING_BASE_URL / EMBEDDING_API_KEY / EMBEDDING_MODEL to any OpenAI-compatible embeddings provider.",
+  );
+
+  // These two are the most common causes of a failing Neon deployment.
+  if (databaseUrl && /neon\.tech/i.test(databaseUrl)) {
+    check(
+      "Neon pooled endpoint",
+      /-pooler\./i.test(databaseUrl),
+      /-pooler\./i.test(databaseUrl)
+        ? "using the pooled (-pooler) host"
+        : "using a DIRECT Neon host — serverless deployments can exhaust the connection limit",
+      /-pooler\./i.test(databaseUrl) ? undefined : "Switch DATABASE_URL to the pooled endpoint; keep the direct URL in DIRECT_URL for migrations.",
+    );
+    check(
+      "Neon TLS",
+      /sslmode=require/i.test(databaseUrl),
+      /sslmode=require/i.test(databaseUrl) ? "sslmode=require present" : "sslmode=require missing",
+      /sslmode=require/i.test(databaseUrl) ? undefined : "Append ?sslmode=require to the connection string.",
+    );
+  }
   if (ai.lastError) {
     check("Last AI error", false, ai.lastError, "Verify the key, billing, and model name.");
   }
@@ -75,6 +114,7 @@ async function main() {
     const pool = new Pool({
       connectionString: databaseUrl,
       connectionTimeoutMillis: 10_000,
+      max: 1,
       ...(/(neon\.tech|supabase\.co|render\.com|vercel)/i.test(databaseUrl)
         ? { ssl: { rejectUnauthorized: false } }
         : {}),
