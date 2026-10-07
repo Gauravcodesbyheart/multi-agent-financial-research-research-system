@@ -101,8 +101,14 @@ fi
 say "5. Database"
 if [ "$RUN_MIGRATIONS" = "1" ]; then
   echo "   Applying migrations with drizzle-kit (uses DIRECT_URL when set)..."
-  npx drizzle-kit migrate
-  ok "Migrations applied"
+  if npx drizzle-kit migrate; then
+    ok "Migrations applied"
+  else
+    # drizzle-kit exits non-zero but frequently prints nothing at all, which makes a
+    # connection failure look like success. Say so explicitly.
+    warn "drizzle-kit could not apply the migrations (it often prints no reason)."
+    warn "Check DATABASE_URL / DIRECT_URL in .env, then run 'npm run doctor' for details."
+  fi
 elif [ "$NEEDS_EDIT" = "1" ]; then
   warn "Skipped: finish editing .env first."
 else

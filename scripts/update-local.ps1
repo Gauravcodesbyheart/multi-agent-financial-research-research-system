@@ -94,7 +94,14 @@ Say "5. Database"
 if ($Migrate) {
   Write-Host "   Applying migrations with drizzle-kit (uses DIRECT_URL when set)..."
   npx drizzle-kit migrate
-  Ok "Migrations applied"
+  if ($LASTEXITCODE -eq 0) {
+    Ok "Migrations applied"
+  } else {
+    # drizzle-kit exits non-zero but frequently prints nothing at all, which makes a
+    # connection failure look like success. Say so explicitly.
+    Warn "drizzle-kit could not apply the migrations (it often prints no reason)."
+    Warn "Check DATABASE_URL / DIRECT_URL in .env, then run 'npm run doctor' for details."
+  }
 } elseif ($needsEdit) {
   Warn "Skipped: finish editing .env first."
 } else {

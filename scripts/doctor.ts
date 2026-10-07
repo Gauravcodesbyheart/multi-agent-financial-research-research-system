@@ -22,6 +22,26 @@ function check(name: string, ok: boolean, detail: string, fix?: string) {
   results.push({ name, ok, detail, fix });
 }
 
+/**
+ * Values copied straight out of .env.example are syntactically valid, so they pass
+ * shape checks and only fail later as a confusing "password authentication failed".
+ * Detect them up front: this is by far the most common first-run mistake.
+ */
+const PLACEHOLDERS = [
+  { pattern: /ep-xxx/i, label: "ep-xxx" },
+  { pattern: /user:password/i, label: "user:password" },
+  { pattern: /replace-with-a-long-random-secret/i, label: "replace-with-a-long-random-secret" },
+  { pattern: /^gsk_your_real_key|your-groq-api-key|^gsk_mock/i, label: "a placeholder API key" },
+];
+
+function findPlaceholder(value: string | undefined): string | null {
+  if (!value) return null;
+  for (const { pattern, label } of PLACEHOLDERS) {
+    if (pattern.test(value)) return label;
+  }
+  return null;
+}
+
 const REQUIRED_TABLES = [
   "users",
   "companies",
@@ -40,30 +60,53 @@ const REQUIRED_TABLES = [
 async function main() {
   // --- Environment ---------------------------------------------------------
   const databaseUrl = process.env.DATABASE_URL?.trim();
+  const dbPlaceholder = findPlaceholder(databaseUrl);
   check(
     "DATABASE_URL",
-    Boolean(databaseUrl),
-    databaseUrl ? `set (${databaseUrl.replace(/:[^:@/]*@/, ":***@")})` : "missing",
-    databaseUrl ? undefined : "Copy .env.example to .env and paste your Neon pooled connection string.",
+    Boolean(databaseUrl) && !dbPlaceholder,
+    dbPlaceholder
+      ? `still the .env.example placeholder (${dbPlaceholder}) — no real credentials yet`
+      : databaseUrl
+        ? `set (${databaseUrl.replace(/:[^:@/]*@/, ":***@")})`
+        : "missing",
+    dbPlaceholder
+      ? "Open .env and replace DATABASE_URL with YOUR Neon pooled connection string (Neon dashboard → Connect → Pooled connection)."
+      : databaseUrl
+        ? undefined
+        : "Copy .env.example to .env and paste your Neon pooled connection string.",
   );
 
   const directUrl = process.env.DIRECT_URL?.trim();
   if (databaseUrl && /neon\.tech/i.test(databaseUrl)) {
+    const directPlaceholder = findPlaceholder(directUrl);
     check(
       "DIRECT_URL (migrations)",
-      Boolean(directUrl),
-      directUrl ? "set — migrations will use the direct endpoint" : "not set — migrations will run through the pooled endpoint",
-      directUrl ? undefined : "Add DIRECT_URL (Neon direct, non-pooler host) so DDL is not sent through PgBouncer.",
+      Boolean(directUrl) && !directPlaceholder,
+      directPlaceholder
+        ? `still the .env.example placeholder (${directPlaceholder})`
+        : directUrl
+          ? "set — migrations will use the direct endpoint"
+          : "not set — migrations will run through the pooled endpoint",
+      directPlaceholder
+        ? "Replace DIRECT_URL with YOUR Neon direct connection string (Neon dashboard → Connect → Direct connection)."
+        : directUrl
+          ? undefined
+          : "Add DIRECT_URL (Neon direct, non-pooler host) so DDL is not sent through PgBouncer.",
     );
   }
 
   const secret = process.env.NEXTAUTH_SECRET?.trim();
-  const secretOk = Boolean(secret && secret.length >= 16);
+  const secretPlaceholder = findPlaceholder(secret);
+  const secretOk = Boolean(secret && secret.length >= 16) && !secretPlaceholder;
   check(
     "NEXTAUTH_SECRET",
     secretOk,
-    secret ? `set (${secret.length} chars)` : "missing — using the insecure development fallback",
-    secretOk ? undefined : "Generate one with: openssl rand -base64 32",
+    secretPlaceholder
+      ? "still the .env.example placeholder — it is public, so treat it as unset"
+      : secret
+        ? `set (${secret.length} chars)`
+        : "missing — using the insecure development fallback",
+    secretOk ? undefined : "Generate one with: openssl rand -base64 32 and paste it into .env",
   );
 
   const ai = getAiStatus();
