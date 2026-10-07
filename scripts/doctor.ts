@@ -109,6 +109,34 @@ async function main() {
     secretOk ? undefined : "Generate one with: openssl rand -base64 32 and paste it into .env",
   );
 
+  // --- Unrecognised AI settings -------------------------------------------
+  // A well-formed .env can still be wrong: if a variable the app never reads is set,
+  // it is silently ignored and the symptom shows up much later as "no provider
+  // configured" or a missing key. Name the mistake here instead.
+  const UNSUPPORTED: Array<{ name: string; hint: string }> = [
+    { name: "AI_PROVIDER", hint: "Not used — the provider is inferred from GROQ_API_KEY / LLM_BASE_URL. Remove it." },
+    { name: "EMBEDDING_PROVIDER", hint: "Not used — set EMBEDDING_BASE_URL, EMBEDDING_API_KEY and EMBEDDING_MODEL instead." },
+    { name: "GROQ_EMBEDDING_MODEL", hint: "Groq has no embeddings API. Point EMBEDDING_BASE_URL at another provider (OpenAI, Ollama, Jina, Voyage) and set EMBEDDING_MODEL to its model id." },
+    { name: "GROQ_EMBEDDING_BASE_URL", hint: "Groq has no embeddings API. Use EMBEDDING_BASE_URL with a provider that offers one." },
+    { name: "GROQ_MAX_COMPLETION_TOKENS", hint: "Not used — each agent sets its own token budget. Remove it." },
+    { name: "MAX_COMPLETION_TOKENS", hint: "Not used — each agent sets its own token budget. Remove it." },
+    { name: "GROQ_API_URL", hint: "Use LLM_BASE_URL (defaults to https://api.groq.com/openai/v1)." },
+    { name: "GROQ_KEY", hint: "Use GROQ_API_KEY." },
+    { name: "GOOGLE_API_KEY", hint: "This app uses Groq. Set GROQ_API_KEY and remove the Gemini key." },
+    { name: "GEMINI_API_KEY", hint: "This app uses Groq. Set GROQ_API_KEY and remove the Gemini key." },
+  ];
+  const ignored = UNSUPPORTED.filter(({ name }) => (process.env[name] || "").trim().length > 0);
+  if (ignored.length > 0) {
+    check(
+      "Unrecognised AI settings",
+      false,
+      `${ignored.length} variable(s) set that this app never reads: ${ignored.map((entry) => entry.name).join(", ")} — they have no effect`,
+      ignored.map((entry) => `${entry.name}: ${entry.hint}`).join("\n                                "),
+    );
+  } else {
+    check("Unrecognised AI settings", true, "none — every AI variable set in .env is read by the app");
+  }
+
   const ai = getAiStatus();
   const aiOk = isLlmConfigured();
   check(
