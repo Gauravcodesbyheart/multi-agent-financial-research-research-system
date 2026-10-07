@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { researchSessions, documents, chatMessages } from "@/db/schema";
 import { and, eq, desc, count } from "drizzle-orm";
+import { readJsonBody } from "@/lib/validation";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -39,16 +40,22 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { name, description, tags } = await req.json();
+  const body = await readJsonBody(req);
+  if (!body) return NextResponse.json({ error: "Request body must be a valid JSON object" }, { status: 400 });
+
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const description = typeof body.description === "string" ? body.description : null;
+  const tags = Array.isArray(body.tags) ? body.tags.filter((tag): tag is string => typeof tag === "string").slice(0, 20) : [];
   if (!name) return NextResponse.json({ error: "Name required" }, { status: 400 });
+  if (name.length > 200) return NextResponse.json({ error: "Name must be 200 characters or fewer" }, { status: 400 });
 
   const [newSession] = await db
     .insert(researchSessions)
     .values({
       userId: session.user.id,
       name,
-      description: description || null,
-      tags: tags || [],
+      description,
+      tags,
       status: "active",
     })
     .returning();

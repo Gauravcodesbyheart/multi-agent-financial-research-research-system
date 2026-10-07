@@ -150,9 +150,11 @@ export default function DocumentDetailPage() {
           </span>
           <button
             onClick={buildEmbeddings}
-            disabled={embeddingBusy || doc.embeddingStatus === "processing" || !doc.chunkCount}
+            disabled={embeddingBusy || doc.embeddingStatus === "processing" || !doc.chunkCount || doc.embeddingStatus === "unavailable"}
             className="flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
-            title="Build semantic embeddings for indexed document chunks"
+            title={doc.embeddingStatus === "unavailable"
+              ? "Semantic search needs a separate embeddings provider (Groq has no embeddings API). Configure EMBEDDING_BASE_URL, EMBEDDING_API_KEY, and EMBEDDING_MODEL to enable it. Keyword search already works."
+              : "Build semantic embeddings for indexed document chunks"}
           >
             {embeddingBusy || doc.embeddingStatus === "processing" ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
             {doc.embeddingStatus === "completed" ? "Rebuild embeddings" : "Build embeddings"}

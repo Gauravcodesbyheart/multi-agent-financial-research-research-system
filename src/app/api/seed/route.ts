@@ -12,8 +12,22 @@ async function handleSeed(req: NextRequest) {
   }
 
   try {
-    await seedDatabase();
-    return NextResponse.json({ success: true, message: "Database seeded successfully" });
+    const summary = await seedDatabase();
+    return NextResponse.json({
+      success: true,
+      alreadySeeded: summary.alreadySeeded,
+      created: {
+        demoUsers: summary.demoUsers,
+        companies: summary.companies,
+        documents: summary.documents,
+        metrics: summary.metrics,
+        risks: summary.risks,
+      },
+      skippedExisting: summary.skippedExisting,
+      message: summary.alreadySeeded
+        ? "Demo data already present — nothing to create"
+        : `Seeded ${summary.companies} companies, ${summary.documents} documents, ${summary.metrics} metric sets, ${summary.risks} risk flags`,
+    });
   } catch (error) {
     console.error("Seed error:", error);
     return NextResponse.json({ error: "Seeding failed. Check server logs." }, { status: 500 });

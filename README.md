@@ -456,27 +456,31 @@ Install:
 
 * Node.js **20.9+**
 * npm
-* PostgreSQL **14+**
 * Git
+
+You do **not** need to install PostgreSQL locally — the app targets a Neon Postgres
+database. (A local PostgreSQL 14+ server also works if you prefer, but Neon is the
+supported path and its pooled endpoint is what `DATABASE_URL` expects.)
 
 Optional:
 
 * Docker Desktop
-* Groq console (console.groq.com/keys) key
+* A Groq API key (console.groq.com/keys) for AI answers; without it the app runs in
+  evidence-only mode
 * OCR software for scanned PDFs
 
-Use Node.js 20.9 or newer for Next.js 16, plus PostgreSQL 14 or newer.
+Use Node.js 20.9 or newer for Next.js 16.
 
 ---
 
 ## 1. Clone the Repository
 
 ```bash
-git clone --branch arena/01a101ca-multi-agent-financial-research https://github.com/Gauravcodesbyheart/multi-agent-financial-research-research-system.git
+git clone --branch arena/a267d0d5-multi-agent-financial-research https://github.com/Gauravcodesbyheart/multi-agent-financial-research-research-system.git
 cd multi-agent-financial-research-research-system
 ```
 
-If the changes have already been merged to the repository's default branch, omit `--branch arena/01a101ca-multi-agent-financial-research`.
+If the changes have already been merged to the repository's default branch, omit `--branch arena/a267d0d5-multi-agent-financial-research`.
 
 ## 2. Install Dependencies
 
@@ -660,8 +664,8 @@ In production, `GET /api/seed` is disabled; the `POST` route requires `SEED_SECR
 
    ```bash
    git fetch origin
-   git checkout arena/01a101ca-multi-agent-financial-research
-   git pull --ff-only origin arena/01a101ca-multi-agent-financial-research
+   git checkout arena/a267d0d5-multi-agent-financial-research
+   git pull --ff-only origin arena/a267d0d5-multi-agent-financial-research
    ```
 
 2. Install dependencies with `npm ci`, create `.env` from `.env.example`, point `DATABASE_URL` to your local PostgreSQL database, and apply migrations.
@@ -677,7 +681,7 @@ In production, `GET /api/seed` is disabled; the `POST` route requires `SEED_SECR
    ```bash
    git add .
    git commit -m "Describe the change"
-   git push origin arena/01a101ca-multi-agent-financial-research
+   git push origin arena/a267d0d5-multi-agent-financial-research
    ```
 
    If you use a different branch in your own fork, replace the branch name in the commands. Never commit `.env` or confidential financial files.

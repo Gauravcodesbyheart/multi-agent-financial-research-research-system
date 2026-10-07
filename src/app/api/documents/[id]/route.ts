@@ -4,12 +4,14 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { documents, financialMetrics, riskFlags, documentChunks, agentLogs } from "@/db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { isUuid } from "@/lib/validation";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  if (!isUuid(id)) return NextResponse.json({ error: "Invalid document id" }, { status: 400 });
   const [doc] = await db
     .select()
     .from(documents)
@@ -51,7 +53,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  await db.delete(documents).where(and(eq(documents.id, id), eq(documents.userId, session.user.id)));
+  if (!isUuid(id)) return NextResponse.json({ error: "Invalid document id" }, { status: 400 });
+  // Scope by owner, then report honestly: a silent 200 for a no-op delete makes
+  // it impossible for a client to tell whether the document was actually removed.
+  const deleted = await db.delete(documents)
+    .where(and(eq(documents.id, id), eq(documents.userId, session.user.id)))
+    .returning({ id: documents.id });
 
-  return NextResponse.json({ success: true });
+  if (deleted.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json({ success: true, deleted: deleted.length });
 }

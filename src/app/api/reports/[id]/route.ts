@@ -4,12 +4,14 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { analysisReports } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { isUuid } from "@/lib/validation";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  if (!isUuid(id)) return NextResponse.json({ error: "Invalid report id" }, { status: 400 });
   const [report] = await db
     .select()
     .from(analysisReports)
@@ -25,9 +27,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  await db
+  if (!isUuid(id)) return NextResponse.json({ error: "Invalid report id" }, { status: 400 });
+  const deleted = await db
     .delete(analysisReports)
-    .where(and(eq(analysisReports.id, id), eq(analysisReports.userId, session.user.id)));
+    .where(and(eq(analysisReports.id, id), eq(analysisReports.userId, session.user.id)))
+    .returning({ id: analysisReports.id });
 
-  return NextResponse.json({ success: true });
+  if (deleted.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json({ success: true, deleted: deleted.length });
 }

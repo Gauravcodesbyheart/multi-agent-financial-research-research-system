@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { documents, companies, researchSessions, documentProcessingJobs } from "@/db/schema";
 import { eq, desc, and } from "drizzle-orm";
+import { isUuid } from "@/lib/validation";
 import { processDocumentJob } from "@/lib/agents/orchestrator";
 
 export const maxDuration = 300;
@@ -26,6 +27,7 @@ export async function GET(req: NextRequest) {
     .orderBy(desc(documents.createdAt));
 
   if (sessionId) {
+    if (!isUuid(sessionId)) return NextResponse.json({ error: "Invalid sessionId" }, { status: 400 });
     query = db
       .select({
         document: documents,

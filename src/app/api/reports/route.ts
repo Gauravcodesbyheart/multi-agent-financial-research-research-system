@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { analysisReports, companies, documents, researchSessions } from "@/db/schema";
 import { and, eq, desc, inArray, or } from "drizzle-orm";
+import { isUuid, filterUuidList } from "@/lib/validation";
 import { generateAnalysisReport } from "@/lib/agents/reportAgent";
 
 export const maxDuration = 300;
@@ -32,9 +33,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Request body must be valid JSON" }, { status: 400 });
   }
   const sessionId = typeof body.sessionId === "string" && body.sessionId ? body.sessionId : null;
-  const companyIds = Array.isArray(body.companyIds)
-    ? [...new Set(body.companyIds.filter((id): id is string => typeof id === "string" && Boolean(id)))]
-    : [];
+  if (sessionId && !isUuid(sessionId)) {
+    return NextResponse.json({ error: "Invalid sessionId" }, { status: 400 });
+  }
+  // Reject non-UUID ids here; passing them to Postgres throws an unhandled 500.
+  const companyIds = filterUuidList(body.companyIds);
   const title = typeof body.title === "string" ? body.title.trim().slice(0, 500) : "";
   const reportType = typeof body.reportType === "string" ? body.reportType.slice(0, 100) : "comprehensive";
   const additionalContext = typeof body.additionalContext === "string" ? body.additionalContext.slice(0, 4000) : undefined;

@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { companies, documents, financialMetrics, researchSessions, riskFlags } from "@/db/schema";
 import { generateBenchmarkInsights } from "@/lib/agents/benchmarkAgent";
+import { isUuid, filterUuidList } from "@/lib/validation";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -16,10 +17,13 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Request body must be valid JSON" }, { status: 400 });
   }
-  const companyIds = Array.isArray(body.companyIds)
-    ? [...new Set(body.companyIds.filter((id): id is string => typeof id === "string" && Boolean(id)))]
-    : [];
-  const sessionId = typeof body.sessionId === "string" && body.sessionId ? body.sessionId : undefined;
+  // Every id must be a well-formed UUID before it reaches the query, otherwise
+  // Postgres raises `invalid input syntax for type uuid` as an unhandled 500.
+  const companyIds = filterUuidList(body.companyIds);
+  const sessionId = isUuid(body.sessionId) ? body.sessionId : undefined;
+  if (body.sessionId !== undefined && body.sessionId !== null && body.sessionId !== "" && !sessionId) {
+    return NextResponse.json({ error: "Invalid sessionId" }, { status: 400 });
+  }
   if (companyIds.length < 2 || companyIds.length > 8) {
     return NextResponse.json({ error: "Select between 2 and 8 companies" }, { status: 400 });
   }

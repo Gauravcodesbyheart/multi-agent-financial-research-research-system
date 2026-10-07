@@ -45,12 +45,12 @@ export default function DashboardPage() {
     setSeeding(true);
     try {
       const res = await fetch("/api/seed");
+      const d = await res.json().catch(() => null);
       if (res.ok) {
-        toast.success("Demo data loaded! Refreshing...");
+        toast.success(d?.message || "Demo data loaded! Refreshing...");
         await fetchDashboard();
       } else {
-        const d = await res.json();
-        toast.error(d.error || "Seeding failed");
+        toast.error(d?.error || "Seeding failed");
       }
     } finally {
       setSeeding(false);
