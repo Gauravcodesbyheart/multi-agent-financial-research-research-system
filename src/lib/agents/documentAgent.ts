@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { documents, documentChunks, agentLogs } from "@/db/schema";
 import { asc, eq, inArray } from "drizzle-orm";
 import { cosineSimilarity, keywordRelevance } from "./analysisUtils";
-import { DEFAULT_GEMINI_EMBEDDING_MODEL } from "./embeddingAgent";
+import { getConfiguredEmbeddingModelIdentifier } from "./embeddingAgent";
 
 export function chunkText(text: string, chunkSize = 1500, overlap = 200): string[] {
   const chunks: string[] = [];
@@ -173,9 +173,10 @@ export async function searchDocumentChunks(
     .where(eq(documentChunks.documentId, documentId))
     .orderBy(asc(documentChunks.chunkIndex));
 
-  const hasCompleteEmbeddingIndex = chunks.length > 0 && Boolean(queryEmbedding?.length) && chunks.every((chunk) =>
+  const embeddingModelIdentifier = getConfiguredEmbeddingModelIdentifier();
+  const hasCompleteEmbeddingIndex = chunks.length > 0 && Boolean(queryEmbedding?.length) && Boolean(embeddingModelIdentifier) && chunks.every((chunk) =>
     Array.isArray(chunk.embedding) &&
-    chunk.embeddingModel === DEFAULT_GEMINI_EMBEDDING_MODEL &&
+    chunk.embeddingModel === embeddingModelIdentifier &&
     chunk.embedding.length === queryEmbedding?.length
   );
 
@@ -233,9 +234,10 @@ export async function searchDocumentCollection(
     .orderBy(asc(documentChunks.documentId), asc(documentChunks.chunkIndex))
     .limit(5000);
 
-  const useEmbeddings = chunks.length > 0 && Boolean(queryEmbedding?.length) && chunks.every((chunk) =>
+  const embeddingModelIdentifier = getConfiguredEmbeddingModelIdentifier();
+  const useEmbeddings = chunks.length > 0 && Boolean(queryEmbedding?.length) && Boolean(embeddingModelIdentifier) && chunks.every((chunk) =>
     Array.isArray(chunk.embedding) &&
-    chunk.embeddingModel === DEFAULT_GEMINI_EMBEDDING_MODEL &&
+    chunk.embeddingModel === embeddingModelIdentifier &&
     chunk.embedding.length === queryEmbedding?.length
   );
   return chunks

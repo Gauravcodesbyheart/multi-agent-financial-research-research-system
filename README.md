@@ -120,11 +120,11 @@ Compare cash flow and debt-to-equity across two companies.
 What evidence supports the concentration risk?
 ```
 
-The Research Agent decomposes compound questions into retrieval steps and searches the active session's documents. Every chat history read, message write, and research retrieval checks that the signed-in user owns the requested session; document and message queries are scoped to that user as well. Text synthesis uses Groq when `GROQ_API_KEY` is configured (Gemini can be selected as an alternative). It uses Gemini semantic embeddings when every chunk in the collection has a compatible vector; otherwise it falls back to local keyword ranking. Model output is structured as individual claims; before display, every claim must use a retrieved source ID, include an exact quote found in that cited excerpt, and preserve numeric values, currencies, scales, and percentage units from the quote. Invalid claims are omitted, and a transparent evidence-only excerpt summary is used if generation or validation fails; when the research pipeline itself fails, the API returns an error rather than fabricating a chat answer. This deterministic source check improves auditability but does not prove that every paraphrase is semantically entailed; verify consequential conclusions in the original filing.
+The Research Agent decomposes compound questions into retrieval steps and searches the active session's documents. Every chat history read, message write, and research retrieval checks that the signed-in user owns the requested session; document and message queries are scoped to that user as well. Text synthesis uses Groq when `GROQ_API_KEY` is configured (Gemini can be selected as an alternative). Semantic retrieval uses the configured embedding provider—`auto` prefers Groq's `nomic-embed-text-v1_5` when `GROQ_API_KEY` is available, then Gemini—and falls back to local keyword ranking when no compatible vectors are available. Model output is structured as individual claims; before display, every claim must use a retrieved source ID, include an exact quote found in that cited excerpt, and preserve numeric values, currencies, scales, and percentage units from the quote. Invalid claims are omitted, and a transparent evidence-only excerpt summary is used if generation or validation fails; when the research pipeline itself fails, the API returns an error rather than fabricating a chat answer. This deterministic source check improves auditability but does not prove that every paraphrase is semantically entailed; verify consequential conclusions in the original filing.
 
 ### 🔄 Local Fallback Mode
 
-Text AI is optional for core evidence processing. When both provider keys are configured, `AI_PROVIDER=auto` prefers Groq; set it to `groq`, `gemini`, or `none` to choose explicitly. Without a text-model key, uploads still run document indexing, local metric extraction, deterministic red-flag checks, and keyword retrieval; Research returns cited excerpts rather than inventing a synthesis. Benchmarking and reports use deterministic, source-validated values with period history whether or not a model is configured. Groq or Gemini enables model-assisted extraction, additional quote-validated risk screening, and synthesized research. Semantic embeddings remain an optional Gemini feature; Groq-only setups use local keyword retrieval. Embedding failures are recorded separately and do not disable keyword search.
+Text AI is optional for core evidence processing. When both text-provider keys are configured, `AI_PROVIDER=auto` prefers Groq; set it to `groq`, `gemini`, or `none` to choose explicitly. Embeddings have their own setting: `EMBEDDING_PROVIDER=auto` prefers Groq's `nomic-embed-text-v1_5` when `GROQ_API_KEY` is available, then Gemini; set `EMBEDDING_PROVIDER=groq`, `gemini`, or `none` to choose explicitly. Without a text-model key, uploads still run document indexing, local metric extraction, deterministic red-flag checks, and keyword retrieval; Research returns cited excerpts rather than inventing a synthesis. Benchmarking and reports use deterministic, source-validated values with period history whether or not a model is configured. Groq or Gemini enables model-assisted extraction, additional quote-validated risk screening, and synthesized research. Embedding failures are recorded separately and do not disable keyword search.
 
 ---
 
@@ -200,7 +200,7 @@ Extraction Agent: local extraction + optional Groq/Gemini quote validation
 Red Flag Agent: deterministic checks + optional quote-validated model findings
       │
       ▼
-Embedding Agent: optional Gemini vectors (keyword search remains available)
+Embedding Agent: Groq Nomic vectors by default when configured; Gemini is optional (keyword search remains available)
       │
       └──► document status: completed / partial / failed
 
@@ -286,7 +286,7 @@ The system is designed to ground responses in retrieved document evidence; impor
 
 * **Groq Chat Completions API** for model-assisted extraction, risk review, and research synthesis (optional; `openai/gpt-oss-20b` is the default)
 * Optional Gemini text generation as an alternative provider
-* Optional Gemini semantic embeddings; Groq-only deployments use local keyword retrieval
+* Optional Groq `nomic-embed-text-v1_5` embeddings (preferred when a Groq key is configured) or Gemini embeddings
 * Server-side quote/evidence validation for model-assisted claims
 * Deterministic, source-validated benchmarking and reports
 * Local fallback processing when no text model is configured
@@ -308,8 +308,8 @@ Semantic vectors are currently stored as JSONB arrays with their model name. Sim
 
 * **Vercel**
 * **Neon PostgreSQL**
-* GroqCloud API key (recommended for model-assisted text generation)
-* Optional Google AI Studio / Gemini API key for semantic embeddings or Gemini text generation
+* GroqCloud API key (for text generation and optional `nomic-embed-text-v1_5` embeddings)
+* Optional Google AI Studio / Gemini API key for Gemini text generation or embeddings
 
 This application uses Next.js, React, PostgreSQL, Drizzle ORM, NextAuth, document parsing, and optional Groq/Gemini model assistance.
 
@@ -459,8 +459,8 @@ Install:
 Optional:
 
 * Docker Desktop
-* GroqCloud API key for model-assisted extraction, risk review, and research answers
-* Gemini API key for optional semantic embeddings or Gemini text generation
+* GroqCloud API key for model-assisted text features and optional semantic embeddings
+* Gemini API key as an alternative for text generation and embeddings
 * OCR software for scanned PDFs
 
 Use Node.js 20.9 or newer for Next.js 16, plus PostgreSQL 14 or newer.
@@ -520,7 +520,11 @@ GROQ_API_KEY=your-groq-api-key
 GROQ_MODEL=openai/gpt-oss-20b
 GROQ_MAX_COMPLETION_TOKENS=4096
 
-# Optional Gemini provider and semantic embeddings
+# Embeddings use Groq by default when GROQ_API_KEY is set; can be forced to groq/gemini/none
+EMBEDDING_PROVIDER=auto
+GROQ_EMBEDDING_MODEL=nomic-embed-text-v1_5
+
+# Optional Gemini alternative for text generation and embeddings
 GEMINI_API_KEY=your-gemini-api-key
 GEMINI_MODEL=gemini-3.6-flash
 GEMINI_EMBEDDING_MODEL=gemini-embedding-001
@@ -783,7 +787,9 @@ AI_PROVIDER                    # optional; defaults to auto (prefers Groq, then 
 GROQ_API_KEY                   # optional; enables model-assisted text features
 GROQ_MODEL                     # optional; default openai/gpt-oss-20b
 GROQ_MAX_COMPLETION_TOKENS     # optional; default 4096
-GEMINI_API_KEY                 # optional; Gemini text provider and/or semantic embeddings
+EMBEDDING_PROVIDER              # optional; auto prefers Groq, then Gemini
+GROQ_EMBEDDING_MODEL            # optional; default nomic-embed-text-v1_5
+GEMINI_API_KEY                 # optional; Gemini text provider and/or embeddings fallback
 GEMINI_MODEL                   # optional; default Gemini text model
 GEMINI_EMBEDDING_MODEL         # optional; default gemini-embedding-001
 CRON_SECRET                    # required for scheduled durable-job recovery
@@ -800,7 +806,7 @@ Render, Railway, Fly.io, or a VPS can also run this app. Use a managed PostgreSQ
 
 # 🔐 Security
 
-Security is especially important because the application processes financial documents and uses authentication and external AI services. Extracted source text is currently stored in PostgreSQL. When a text model is configured, document excerpts and research prompts are sent to Groq or Gemini for generation; Gemini can also receive document chunks for embeddings. Review each provider's data-handling and contractual terms before uploading confidential material. Keep API keys server-side, use a private database and HTTPS, and grant least-privilege access.
+Security is especially important because the application processes financial documents and uses authentication and external AI services. Extracted source text is currently stored in PostgreSQL. When configured, document excerpts and research prompts are sent to Groq or Gemini for generation, and document chunks are sent to the configured Groq or Gemini embedding endpoint. Review each provider's data-handling and contractual terms before uploading confidential material. Keep API keys server-side, use a private database and HTTPS, and grant least-privilege access.
 
 ### Never commit:
 
@@ -859,7 +865,7 @@ Rotate exposed keys, protect `/api/seed`, restrict database access, validate upl
 
 ### AI Provider Availability
 
-Groq and Gemini enforce model- and organization-specific rate limits; neither provider should be treated as unlimited. Provider quotas or outages affect model-assisted extraction, additional risk review, and synthesized research answers. Gemini quota or availability also affects optional semantic embeddings. Local metric extraction, deterministic red flags, keyword search, source-validated benchmarking, and evidence-only reports remain available for supported workflows.
+Groq and Gemini enforce model- and organization-specific rate limits; neither provider should be treated as unlimited. Provider quotas or outages affect model-assisted extraction, additional risk review, and synthesized research answers. The configured embedding provider's quota or availability affects semantic embeddings. Local metric extraction, deterministic red flags, keyword search, source-validated benchmarking, and evidence-only reports remain available for supported workflows.
 
 ### PDF Processing
 
@@ -1061,8 +1067,8 @@ React
 PostgreSQL
 Drizzle ORM
 NextAuth
-Groq (optional text generation)
-Google Gemini (optional text and embeddings)
+Groq (optional text generation and embeddings)
+Google Gemini (optional text and embeddings alternative)
 Node.js
 TypeScript
 ```

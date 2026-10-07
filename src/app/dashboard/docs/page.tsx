@@ -301,7 +301,7 @@ Next.js 16 App Router (Server)
     ├── Optional AI Providers
     │       ├── Groq Chat API (default text generation when configured)
     │       ├── Gemini text API (optional alternative)
-    │       └── Gemini embeddings (optional semantic vectors)
+    │       └── Groq embeddings (preferred when configured; Gemini is optional)
     │
     └── PostgreSQL Database (Drizzle ORM)
             ├── users                (Authentication)
@@ -490,12 +490,12 @@ Next.js 16 App Router (Server)
               {
                 step: 4,
                 title: "Optional: Get a Groq API Key",
-                content: "Without an AI key, evidence extraction, keyword retrieval, deterministic risk checks, and local fallbacks still work.\nFor model-assisted extraction, risk review, and research, create a key at https://console.groq.com/keys and set GROQ_API_KEY. Groq has rate limits and is not unlimited; check https://console.groq.com/settings/limits.\nGemini can be selected as an alternative text provider and is optional for semantic embeddings. Keep all keys private and never commit them to Git.",
+                content: "Without an AI key, evidence extraction, keyword retrieval, deterministic risk checks, and local fallbacks still work.\nFor model-assisted extraction, risk review, and research, create a key at https://console.groq.com/keys and set GROQ_API_KEY. Groq has rate limits and is not unlimited; check https://console.groq.com/settings/limits.\nGemini can be selected as an alternative text provider or embedding provider. `EMBEDDING_PROVIDER=auto` prefers Groq embeddings when `GROQ_API_KEY` is set. Keep all keys private and never commit them to Git.",
               },
               {
                 step: 5,
                 title: "Configure .env file",
-                content: "Create .env in the project root (never commit it):\n\nDATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/app_db\nNEXTAUTH_SECRET=generate-with-openssl-rand-base64-32\nNEXTAUTH_URL=http://localhost:3000\n# Optional text AI; auto prefers Groq, then Gemini\nAI_PROVIDER=auto\nGROQ_API_KEY=\nGROQ_MODEL=openai/gpt-oss-20b\nGROQ_MAX_COMPLETION_TOKENS=4096\n# Optional Gemini text provider and semantic embeddings\nGEMINI_API_KEY=\nGEMINI_MODEL=gemini-3.6-flash\nGEMINI_EMBEDDING_MODEL=gemini-embedding-001\n# Required for scheduled recovery in production\nCRON_SECRET=\n# Only for deliberate production demo seeding\nSEED_SECRET=",
+                content: "Create .env in the project root (never commit it):\n\nDATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/app_db\nNEXTAUTH_SECRET=generate-with-openssl-rand-base64-32\nNEXTAUTH_URL=http://localhost:3000\n# Optional text AI; auto prefers Groq, then Gemini\nAI_PROVIDER=auto\nGROQ_API_KEY=\nGROQ_MODEL=openai/gpt-oss-20b\nGROQ_MAX_COMPLETION_TOKENS=4096\n# Optional embedding provider; auto prefers Groq when GROQ_API_KEY is set\nEMBEDDING_PROVIDER=auto\nGROQ_EMBEDDING_MODEL=nomic-embed-text-v1_5\n# Optional Gemini text provider or embedding alternative\nGEMINI_API_KEY=\nGEMINI_MODEL=gemini-3.6-flash\nGEMINI_EMBEDDING_MODEL=gemini-embedding-001\n# Required for scheduled recovery in production\nCRON_SECRET=\n# Only for deliberate production demo seeding\nSEED_SECRET=",
               },
               {
                 step: 6,
@@ -520,7 +520,7 @@ Next.js 16 App Router (Server)
           <div className="max-w-3xl space-y-6 animate-fade-in">
             <h1 className="text-2xl font-bold text-slate-900">Deployment Guide</h1>
             <p className="text-slate-500">Deploy with Vercel + Neon PostgreSQL or another Node.js host; review current provider limits and costs.</p>
-            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-4">Uploaded text is stored in PostgreSQL. If Groq or Gemini text AI is configured, document excerpts and research prompts are sent to that provider; Gemini may also receive chunks for embeddings. Review data-handling terms before uploading confidential material. Groq has rate limits and is not unlimited.</p>
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-4">Uploaded text is stored in PostgreSQL. If Groq or Gemini text AI is configured, document excerpts and research prompts are sent to that provider; chunks are also sent to the configured Groq or Gemini embedding provider. Review data-handling terms before uploading confidential material. Groq has rate limits and is not unlimited.</p>
 
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
               <h2 className="font-bold text-emerald-800 mb-1">Recommended: Vercel + Neon</h2>
@@ -566,8 +566,10 @@ Next.js 16 App Router (Server)
                   "  CRON_SECRET = a strong secret for scheduled job recovery",
                   "  AI_PROVIDER = auto by default (prefers Groq, then Gemini); can be groq, gemini, or none",
                   "  GROQ_API_KEY / GROQ_MODEL = optional model-assisted text generation (default model: openai/gpt-oss-20b)",
-                  "  GEMINI_API_KEY / GEMINI_MODEL = optional alternative text provider and semantic embeddings",
-                  "  GEMINI_EMBEDDING_MODEL = gemini-embedding-001 (optional semantic search)",
+                  "  EMBEDDING_PROVIDER = auto, groq, gemini, or none (defaults to auto)",
+                  "  GROQ_EMBEDDING_MODEL = nomic-embed-text-v1_5 (default Groq embedding model)",
+                  "  GEMINI_API_KEY / GEMINI_MODEL = optional alternative text or embedding provider",
+                  "  GEMINI_EMBEDDING_MODEL = gemini-embedding-001 (Gemini semantic search)",
                   "Deploy, then verify health, authentication, uploads, research, and reports",
                 ],
               },

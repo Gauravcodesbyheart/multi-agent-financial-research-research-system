@@ -71,7 +71,7 @@ Next.js 16 App (React Frontend + API Routes)
     ├─── Optional text AI and embeddings
     │       ├── Groq Chat Completions (preferred by default when configured)
     │       ├── Gemini text generation (optional alternative)
-    │       └── Gemini embeddings (optional semantic search)
+    │       └── Groq Nomic embeddings (preferred with a Groq key); Gemini is optional
     │
     └─── PostgreSQL via Drizzle ORM
             ├── users, research_sessions, companies, documents
@@ -115,7 +115,7 @@ Next.js 16 App (React Frontend + API Routes)
 Checks include audit/going-concern language, accounting disclosures, liquidity warnings, balance-sheet anomalies, and cross-period debt, revenue, or margin movements. Trend checks require comparable periods and source evidence whose values match the stored metrics. Model-added findings are retained only when source quotes and numeric claims validate. These are screening signals, not audit conclusions.
 
 ### Agent 4: Embedding Agent
-**What it does:** Optionally creates semantic vectors for document chunks using Gemini embeddings. Vectors are stored in JSONB with a model identifier; keyword search remains available if embeddings are not configured or compatible.
+**What it does:** Creates semantic vectors using Groq `nomic-embed-text-v1_5` by default when `GROQ_API_KEY` is configured, or Gemini when selected. Vectors are stored in JSONB with a provider/model identifier; keyword search remains available if embeddings are unavailable or incompatible.
 
 ### Agent 5: Benchmark Agent
 **What it does:** Compares accessible companies using their latest stored financial metrics and risk flags. It displays source documents and fiscal periods and warns when periods are missing or differ. The system does not generate buy/sell recommendations.
@@ -152,9 +152,10 @@ Each generated factual claim must use a retrieved citation and exact quote. Nume
 ### AI
 - **Groq Chat Completions API**, optional for text generation and preferred by default when configured
   - `openai/gpt-oss-20b`: default Groq model for extraction, risk review, and research synthesis
-- **Google Gemini API** (@google/generative-ai), optional alternative for text generation and semantic embeddings
+- **Groq Embeddings API**, using `nomic-embed-text-v1_5` when selected
+- **Google Gemini API** (@google/generative-ai), optional alternative for text generation and embeddings
   - `GEMINI_MODEL`: configurable Gemini text model
-  - `gemini-embedding-001`: optional semantic retrieval; Groq-only setups use keyword retrieval
+  - `GEMINI_EMBEDDING_MODEL`: optional Gemini semantic retrieval model
 
 ### Database
 - **PostgreSQL** — Relational database
@@ -315,7 +316,11 @@ GROQ_API_KEY=
 GROQ_MODEL=openai/gpt-oss-20b
 GROQ_MAX_COMPLETION_TOKENS=4096
 
-# Optional Gemini text fallback and semantic embeddings
+# Optional embedding provider; auto prefers Groq when GROQ_API_KEY is set
+EMBEDDING_PROVIDER=auto # auto, groq, gemini, or none
+GROQ_EMBEDDING_MODEL=nomic-embed-text-v1_5
+
+# Optional Gemini text provider or embedding fallback
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.6-flash
 GEMINI_EMBEDDING_MODEL=gemini-embedding-001
@@ -327,7 +332,7 @@ CRON_SECRET=
 SEED_SECRET=
 ```
 
-**Optional AI configuration:** Create a private [Groq API key](https://console.groq.com/keys) to enable model-assisted text features; `AI_PROVIDER=auto` prefers Groq when both keys exist. Groq's free tier is rate-limited and is not unlimited—check current organization/model limits in the [Groq Console](https://console.groq.com/settings/limits). Gemini can be selected with `AI_PROVIDER=gemini`, and its key also enables optional semantic embeddings. Never commit keys. Without a text-model key, keyword retrieval and evidence-only local fallbacks remain available.
+**Optional AI configuration:** Create a private [Groq API key](https://console.groq.com/keys) for text generation and embeddings. `AI_PROVIDER=auto` prefers Groq for text when configured; `EMBEDDING_PROVIDER=auto` prefers Groq embeddings. The default Groq embedding model is `nomic-embed-text-v1_5`; set `EMBEDDING_PROVIDER=gemini` to use Gemini instead. Groq is rate-limited and not unlimited—check current organization/model limits in the [Groq Console](https://console.groq.com/settings/limits). Never commit keys. Without an embedding key, keyword retrieval remains available.
 
 **How to generate NEXTAUTH_SECRET:**
 ```bash
@@ -398,7 +403,9 @@ Use the repository's existing Git clone and remote; do not run `git init` inside
    - `AI_PROVIDER` = optional; defaults to `auto` (prefers Groq, then Gemini)
    - `GROQ_API_KEY` and `GROQ_MODEL` = optional; enable Groq text generation
    - `GEMINI_API_KEY` and `GEMINI_MODEL` = optional Gemini text provider
-   - `GEMINI_EMBEDDING_MODEL` = optional semantic embeddings
+   - `EMBEDDING_PROVIDER` = `auto`, `groq`, `gemini`, or `none`
+   - `GROQ_EMBEDDING_MODEL` = Groq embedding model (default `nomic-embed-text-v1_5`)
+   - `GEMINI_EMBEDDING_MODEL` = optional Gemini embedding model
 3. Deploy and verify the health endpoint, sign-in, uploads, research, and reports.
 
 **Step 5: Apply database migrations and configure the worker**
@@ -491,7 +498,7 @@ In local development, sign in and click "Load Demo Data" on the Dashboard (or us
 - Core local extraction, keyword retrieval, deterministic risk checks, benchmarks, and evidence-only report/chat fallbacks remain available
 - Add `GROQ_API_KEY` from [Groq Console](https://console.groq.com/keys) for Groq model-assisted extraction, risk review, and research answers
 - Groq is not unlimited; 429 responses mean a rate/quota limit was reached. Check the [Groq limits page](https://console.groq.com/settings/limits), wait for reset, or configure another provider
-- Set `AI_PROVIDER=gemini` with `GEMINI_API_KEY` to choose Gemini text generation. Gemini embeddings are optional and require a Gemini key
+- Set `AI_PROVIDER=gemini` with `GEMINI_API_KEY` to choose Gemini text generation. For embeddings, set `EMBEDDING_PROVIDER=groq` (default with Groq key) or `gemini`. Existing documents need a reindex after switching embedding models.
 - Keep all keys private and restart the app after changing `.env`
 
 ### Database connection error
