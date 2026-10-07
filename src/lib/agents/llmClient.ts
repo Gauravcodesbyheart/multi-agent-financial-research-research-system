@@ -99,7 +99,8 @@ async function callOnce({ model, systemInstruction, prompt, json, maxTokens }: C
   if (!apiKey) throw new Error(AI_NOT_CONFIGURED_MESSAGE);
 
   const messages: ChatMessage[] = [];
-  if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
+  const system = json ? withJsonModeInstruction(systemInstruction, prompt) : systemInstruction;
+  if (system) messages.push({ role: "system", content: system });
   messages.push({ role: "user", content: prompt });
 
   const controller = new AbortController();
@@ -175,6 +176,20 @@ async function runCompletion(request: CompletionRequest): Promise<CompletionResu
 
   recordAiFailure(lastError);
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+/**
+ * Groq rejects `response_format: json_object` unless the literal word "JSON"
+ * appears in the messages. Any JSON-mode caller that forgets it would fail with a
+ * 400 at runtime, so the requirement is enforced here rather than trusted.
+ */
+export function withJsonModeInstruction(
+  systemInstruction: string | undefined,
+  prompt: string,
+): string | undefined {
+  if (/\bJSON\b/.test(`${systemInstruction ?? ""}\n${prompt}`)) return systemInstruction;
+  const guard = "Respond with a single valid JSON object and no other text.";
+  return systemInstruction ? `${systemInstruction}\n${guard}` : guard;
 }
 
 export async function generateWithLlm(
