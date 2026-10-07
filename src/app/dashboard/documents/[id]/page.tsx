@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { ArrowLeft, FileText, BarChart2, AlertTriangle, Loader2, Sparkles, RefreshCw } from "lucide-react";
+
+import { EMBEDDINGS_UNAVAILABLE_REASON, isEmbeddingsUnavailable } from "@/lib/embeddingUiState";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import { formatCurrency, formatPercent, formatNumber, formatDate, getSeverityColor } from "@/lib/utils";
@@ -59,6 +61,10 @@ export default function DocumentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"overview" | "metrics" | "risks" | "content">("overview");
   const [embeddingBusy, setEmbeddingBusy] = useState(false);
+  // Whether an embeddings provider exists at all. This is an environment-level fact,
+  // not a per-document one: a document can sit at "pending" forever while every click
+  // on "Build embeddings" is guaranteed to fail, which reads as a broken button.
+  const [embeddingConfigured, setEmbeddingConfigured] = useState<boolean | null>(null);
 
   const reloadDocument = useCallback(async (showLoading = true) => {
     if (!id) {
@@ -81,6 +87,23 @@ export default function DocumentDetailPage() {
     const timer = window.setTimeout(() => void reloadDocument(), 0);
     return () => window.clearTimeout(timer);
   }, [reloadDocument]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/health");
+        if (!res.ok) return;
+        const payload = await res.json();
+        if (!cancelled) setEmbeddingConfigured(Boolean(payload?.ai?.embedding));
+      } catch {
+        // Leave it unknown; the button then falls back to the per-document status.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const processing = data?.document.processingStatus;
@@ -113,6 +136,9 @@ export default function DocumentDetailPage() {
   if (!data) return <div className="p-6 text-slate-500">Document not found</div>;
 
   const { document: doc, metrics, risks } = data;
+  // Treat "no provider configured" as unavailable even when this document's status is
+  // something else (pending, failed) - the click cannot succeed in either case.
+  const embeddingsUnavailable = isEmbeddingsUnavailable(embeddingConfigured, doc.embeddingStatus);
   const latestActivity = new Map<string, DocDetail["activity"][number]>();
   for (const log of data.activity) {
     if (!latestActivity.has(log.agentName)) latestActivity.set(log.agentName, log);
@@ -150,10 +176,10 @@ export default function DocumentDetailPage() {
           </span>
           <button
             onClick={buildEmbeddings}
-            disabled={embeddingBusy || doc.embeddingStatus === "processing" || !doc.chunkCount || doc.embeddingStatus === "unavailable"}
+            disabled={embeddingsUnavailable || embeddingBusy || doc.embeddingStatus === "processing" || !doc.chunkCount}
             className="flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
-            title={doc.embeddingStatus === "unavailable"
-              ? "Semantic search needs a separate embeddings provider (Groq has no embeddings API). Configure EMBEDDING_BASE_URL, EMBEDDING_API_KEY, and EMBEDDING_MODEL to enable it. Keyword search already works."
+            title={embeddingsUnavailable
+              ? EMBEDDINGS_UNAVAILABLE_REASON
               : "Build semantic embeddings for indexed document chunks"}
           >
             {embeddingBusy || doc.embeddingStatus === "processing" ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
@@ -164,6 +190,13 @@ export default function DocumentDetailPage() {
           </span>
         </div>
       </div>
+
+      {embeddingConfigured === false && (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <span className="font-medium text-slate-700">Semantic search is off.</span> {EMBEDDINGS_UNAVAILABLE_REASON}{" "}
+          <Link href="/dashboard/docs" className="text-violet-600 hover:underline">How to enable it</Link>
+        </p>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1">

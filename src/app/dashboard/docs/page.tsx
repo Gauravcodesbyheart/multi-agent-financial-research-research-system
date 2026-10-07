@@ -483,13 +483,13 @@ Next.js 16 App Router (Server)
               },
               {
                 step: 3,
-                title: "Create Database",
-                content: "# Open terminal and connect to PostgreSQL:\npsql -U postgres\n\n# Create the database:\nCREATE DATABASE app_db;\n\n# Exit:\n\\q",
+                title: "Create the Database (Neon)",
+                content: "# 1. Sign in at https://console.neon.tech and create a project\n# 2. Open Connect and copy BOTH connection strings:\n#      Pooled connection  -> DATABASE_URL   (host contains -pooler)\n#      Direct connection  -> DIRECT_URL     (used only by migrations)\n# 3. Keep ?sslmode=require on both\n#\n# No local PostgreSQL install is needed.",
               },
               {
                 step: 4,
                 title: "Required for AI answers: Get a Groq API Key",
-                content: "Without a key, evidence extraction, keyword retrieval, and transparent local fallbacks still work.\nFor model analysis or embeddings, create a key at https://aistudio.google.com/\nKeep the key private and never commit it to Git.",
+                content: "Create a key at https://console.groq.com/keys and set GROQ_API_KEY.\nWithout it, evidence extraction, keyword retrieval and local fallbacks still work, but the agents cannot write AI answers.\nNote: Groq has no embeddings API, so semantic search needs a separate provider (see EMBEDDING_* in step 5). Keyword search works without one.\nKeep the key private and never commit it to Git.",
               },
               {
                 step: 5,
@@ -499,7 +499,7 @@ Next.js 16 App Router (Server)
               {
                 step: 6,
                 title: "Install & Run",
-                content: "# Install the locked dependencies:\nnpm ci\n\n# Apply checked-in migrations to a NEW empty database:\nnpx drizzle-kit migrate\n\n# Start development server:\nnpm run dev\n\n# Open in browser:\nhttp://localhost:3000\n\n# Optional local-only demo seed:\ncurl http://localhost:3000/api/seed\n\n# Do not replay the initial migration against an existing push-initialized DB.",
+                content: "# Install the locked dependencies:\nnpm install\n\n# Check the environment, Neon connection and Groq key:\nnpm run doctor\n\n# Apply checked-in migrations to a NEW empty database:\nnpx drizzle-kit migrate\n\n# Start development server:\nnpm run dev\n\n# Open in browser:\nhttp://localhost:3000\n\n# Optional demo seed (or click \"Load Demo Data\" on the dashboard):\ncurl http://localhost:3000/api/seed\n\n# If this database was previously initialized with drizzle-kit push, run 'npx drizzle-kit push' instead of migrate.",
               },
             ].map(({ step, title, content }) => (
               <div key={step} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
