@@ -69,7 +69,7 @@ Next.js 16 App (React Frontend + API Routes)
     │       └── Report Agent (Executive Summary + Key Financials)
     │
     ├─── Optional Google Gemini API
-    │       ├── gemini-3.6-flash (analysis and narrative generation)
+    │       ├── gemini-3.8-flash (analysis and narrative generation)
     │       └── gemini-embedding-001 (optional semantic search)
     │
     └─── PostgreSQL via Drizzle ORM
@@ -150,7 +150,7 @@ Each generated factual claim must use a retrieved citation and exact quote. Nume
 
 ### AI
 - **Google Gemini API** (@google/generative-ai), optional for model analysis
-  - `gemini-3.6-flash`: configurable default for extraction, risk review, research, benchmarking, and reports
+  - `gemini-3.8-flash`: configurable default for extraction, risk review, research, benchmarking, and reports
   - `gemini-embedding-001`: optional semantic retrieval
 
 ### Database
@@ -308,8 +308,8 @@ NEXTAUTH_URL=http://localhost:3000
 
 # Optional AI configuration (local extraction/retrieval still work without a key)
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-3.6-flash
-GEMINI_PRO_MODEL=gemini-3.6-flash
+GEMINI_MODEL=gemini-3.8-flash
+GEMINI_PRO_MODEL=gemini-3.8-flash
 GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 
 # Set when you configure the scheduled recovery worker

@@ -3,13 +3,14 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { agentLogs, documentChunks, documents } from "@/db/schema";
 import { getGeminiClient } from "./gemini";
+import { DEFAULT_GEMINI_EMBEDDING_MODEL, isAiConfigured } from "./aiStatus";
 
-export const DEFAULT_GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-001";
+// Re-exported so existing importers keep a single, consistent model constant.
+export { DEFAULT_GEMINI_EMBEDDING_MODEL };
 const EMBEDDING_BATCH_SIZE = 32;
 
 export function isEmbeddingConfigured(): boolean {
-  const apiKey = process.env.GEMINI_API_KEY;
-  return Boolean(apiKey && !apiKey.startsWith("AIzaSyDemo"));
+  return isAiConfigured();
 }
 
 export async function createTextEmbedding(

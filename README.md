@@ -518,8 +518,8 @@ Optional AI configuration (omit `GEMINI_API_KEY` to use evidence-only local fall
 
 ```env
 GEMINI_API_KEY=your-gemini-api-key
-GEMINI_MODEL=gemini-3.6-flash
-GEMINI_PRO_MODEL=gemini-3.6-flash
+GEMINI_MODEL=gemini-3.8-flash
+GEMINI_PRO_MODEL=gemini-3.8-flash
 GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 ```
 
@@ -577,9 +577,12 @@ Expected healthy response:
 ```json
 {
   "status": "ok",
-  "database": "connected"
+  "database": "connected",
+  "ai": { "configured": true, "state": "ready" }
 }
 ```
+
+If `ai.configured` is `false` (or `status` is `"degraded"`), the app is running but the agents are falling back to local, non-AI logic. See [Troubleshooting the agents](#-troubleshooting-the-agents).
 
 ---
 
@@ -598,6 +601,37 @@ Invoke-WebRequest http://localhost:3000/api/seed -Method GET
 ```
 
 The built-in demo users are `demo@finresearch.ai` and `student@finresearch.ai`, both with the local-only password `demo123456`. Change or remove these accounts before any public demo. The dataset includes Apple, Microsoft, Tesla, and Amazon; fixture metrics are illustrative and should be checked against their cited source text.
+
+---
+
+## 🩺 Troubleshooting the Agents
+
+Every agent degrades silently by design: if the AI provider is unavailable, the
+pipeline keeps working with local, deterministic logic instead of failing the
+request. That is good for uptime and bad for diagnosis, so run the setup doctor
+first whenever the agents "don't work":
+
+```bash
+npm run doctor
+```
+
+It checks `DATABASE_URL`, `NEXTAUTH_SECRET`, `GEMINI_API_KEY`, the live database
+connection, the presence of every required table, and your content counts, then
+prints the exact fix for each failing item. `GET /api/health` reports the same AI
+state as JSON.
+
+### Common causes
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Every request fails, login rejects valid passwords | `DATABASE_URL` is unset or the database is unreachable; `pg` silently falls back to `localhost:5432` | Set `DATABASE_URL` in `.env`; the app now refuses to start with a clear error instead of failing per-request |
+| Login always says invalid credentials | Database is reachable but the schema was never created | `npm run db:push` (development) or `npm run db:migrate` |
+| Research Agent returns passages but never a written answer | `GEMINI_API_KEY` is missing or invalid | Add a key; the response now states this explicitly instead of just returning excerpts |
+| `/api/health` shows `"state": "degraded"` | The configured model was rejected (retired or not enabled for your key) | The client automatically retries fallback models and reports the substitution in `ai.lastNotice`; pin another model with `GEMINI_MODEL` |
+| A document is uploaded and indexed but no question ever cites it | Document was uploaded under **Workspace (all sessions)** while a different session was in use | The Research Agent searches the active session plus all session-less workspace documents; link the document to a session to scope it |
+| Metrics/risks are empty after upload | Processing job did not finish | Check the Documents page status, then `GET /api/worker/documents` with `Authorization: Bearer $CRON_SECRET` to drain queued jobs |
+
+---
 
 In production, `GET /api/seed` is disabled; the `POST` route requires `SEED_SECRET` and an `x-seed-secret` header. Do not seed a real production workspace unless you explicitly need a controlled demo dataset.
 
@@ -775,8 +809,8 @@ DATABASE_URL
 NEXTAUTH_SECRET
 NEXTAUTH_URL
 GEMINI_API_KEY                 # optional; leave unset for evidence-only local fallbacks
-GEMINI_MODEL                   # e.g. gemini-3.6-flash
-GEMINI_PRO_MODEL               # e.g. gemini-3.6-flash
+GEMINI_MODEL                   # e.g. gemini-3.8-flash
+GEMINI_PRO_MODEL               # e.g. gemini-3.8-flash
 GEMINI_EMBEDDING_MODEL         # e.g. gemini-embedding-001
 CRON_SECRET                    # required for scheduled durable-job recovery
 SEED_SECRET                    # only if controlled production demo seeding is needed

@@ -1,10 +1,11 @@
 // Research Agent — decomposes compound questions, retrieves source chunks, and returns verified citations.
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { agentLogs, documents, researchSessions } from "@/db/schema";
 import { DEFAULT_GEMINI_MODEL, generateJSON } from "./gemini";
 import { searchDocumentCollection, type RetrievedChunk } from "./documentAgent";
 import { tryCreateQueryEmbedding } from "./embeddingAgent";
+import { describeAiUnavailable, isAiConfigured } from "./aiStatus";
 import { decomposeResearchQuestion, validateGroundedResearchAnswer } from "./analysisUtils";
 
 export interface Citation {
@@ -35,20 +36,31 @@ function buildLocalResearchAnswer(
   question: string,
   searchSteps: string[],
   chunks: RetrievedEvidence[],
+  searchedDocumentCount: number,
 ): { answer: string; citations: Citation[]; reasoning: string } {
   const citations = buildCitations(chunks);
+
   if (citations.length === 0) {
+    // Distinguish "no documents at all" from "documents exist but nothing matched":
+    // both used to return the same message, which sent users chasing the wrong fix.
+    const answer = searchedDocumentCount === 0
+      ? "There are no documents in your workspace yet, so there is nothing to cite. Upload a financial document on the Documents page (it is indexed automatically), then ask again."
+      : `I couldn't find matching evidence for this question across ${searchedDocumentCount} indexed document(s). Try naming a specific company, metric, or fiscal period, or confirm the targeted documents finished processing. No answer has been inferred from outside sources.`;
     return {
-      answer: `I couldn't find matching evidence for this question in the indexed documents. Try narrowing the question or check that document processing has completed. No answer has been inferred from outside sources.`,
+      answer,
       citations: [],
-      reasoning: `Searched ${searchSteps.length} retrieval step(s) using local keyword search; no source passages passed the relevance filter.`,
+      reasoning: `Searched ${searchedDocumentCount} document(s) across ${searchSteps.length} retrieval step(s); no source passages passed the relevance filter.`,
     };
   }
 
   const evidence = citations.map((citation) =>
     `[${citation.citationId}] ${citation.documentName} — ${citation.section}, chunk ${citation.chunkIndex + 1}: "${citation.excerpt}"`
   ).join("\n\n");
-  const answer = `I could not generate a synthesized answer for “${question}”. The passages below were retrieved from your documents; they are source evidence, not conclusions.\n\n${evidence}`;
+  // Say why there is no synthesis (missing key vs. provider error) instead of a bare apology.
+  const reason = isAiConfigured()
+    ? "AI synthesis failed for this request, so the retrieved passages are shown verbatim."
+    : describeAiUnavailable();
+  const answer = `I could not generate a synthesized answer for “${question}”. ${reason}\n\nThe passages below were retrieved from your documents; they are source evidence, not conclusions.\n\n${evidence}`;
   const mode = chunks.some((chunk) => chunk.retrievalMethod === "embedding") ? "semantic embedding search" : "keyword fallback search";
   return {
     answer,
@@ -79,11 +91,18 @@ export async function answerResearchQuestion(
   });
 
   const searchSteps = decomposeResearchQuestion(question);
-  const sessionDocs = await db.select({ id: documents.id })
+  // Retrieval scope: the documents linked to this session, PLUS the user's
+  // session-less ("workspace") documents. The Documents page defaults to
+  // "No session", and those uploads were previously unreachable by every agent —
+  // the document was indexed but no question could ever cite it.
+  const searchableDocs = await db.select({ id: documents.id })
     .from(documents)
-    .where(and(eq(documents.sessionId, sessionId), eq(documents.userId, userId)))
+    .where(and(
+      eq(documents.userId, userId),
+      or(eq(documents.sessionId, sessionId), isNull(documents.sessionId)),
+    ))
     .orderBy(desc(documents.createdAt));
-  const documentIds = sessionDocs.map((document) => document.id);
+  const documentIds = searchableDocs.map((document) => document.id);
   const evidenceByChunk = new Map<string, RetrievedEvidence>();
 
   for (const step of searchSteps) {
@@ -105,7 +124,7 @@ export async function answerResearchQuestion(
     .sort((left, right) => right.score - left.score)
     .slice(0, 8);
   if (relevantChunks.length === 0) {
-    const fallback = buildLocalResearchAnswer(question, searchSteps, relevantChunks);
+    const fallback = buildLocalResearchAnswer(question, searchSteps, relevantChunks, documentIds.length);
     await db.insert(agentLogs).values({
       sessionId,
       agentName: "Research Agent",
@@ -179,7 +198,7 @@ Each step must have its own claims. Split compound reasoning into atomic claims.
     });
     return { answer: validated.answer, citations: usedCitations, reasoning };
   } catch (error) {
-    const fallback = buildLocalResearchAnswer(question, searchSteps, relevantChunks);
+    const fallback = buildLocalResearchAnswer(question, searchSteps, relevantChunks, documentIds.length);
     await db.insert(agentLogs).values({
       sessionId,
       agentName: "Research Agent",

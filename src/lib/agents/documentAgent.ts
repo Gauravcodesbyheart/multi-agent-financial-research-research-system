@@ -68,11 +68,17 @@ export async function processDocument(documentId: string, content: string): Prom
       details: `Processing document ${documentId}`,
     });
 
-    // Clean text
+    // Clean text.
+    // Only control characters that break Postgres storage, quoting, or chunking are
+    // removed. Stripping the whole non-ASCII range destroyed currency symbols (€, £, ¥),
+    // typographic quotes/dashes, and every non-English filing — which silently corrupted
+    // the passages the Research Agent cites and broke exact-quote validation.
     const cleanedContent = content
-      .replace(/\r\n/g, "\n")
+      .replace(/\r\n?/g, "\n")
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
+      .replace(/\u00A0/g, " ")
+      .replace(/[ \t]+\n/g, "\n")
       .replace(/\n{3,}/g, "\n\n")
-      .replace(/[^\x00-\x7F]/g, " ")
       .trim();
 
     // Create chunks

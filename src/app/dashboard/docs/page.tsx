@@ -299,7 +299,7 @@ Next.js 16 App Router (Server)
     │       └── reportAgent.ts      (Executive Summary and Key Financials)
     │
     ├── Google Gemini AI API
-    │       ├── gemini-3.6-flash    (Configurable: extraction, risk review, research, benchmarks, reports)
+    │       ├── gemini-3.8-flash    (Configurable: extraction, risk review, research, benchmarks, reports)
     │       └── gemini-embedding-001 (Optional semantic vectors)
     │
     └── PostgreSQL Database (Drizzle ORM)
@@ -494,7 +494,7 @@ Next.js 16 App Router (Server)
               {
                 step: 5,
                 title: "Configure .env file",
-                content: "Create .env in the project root (never commit it):\n\nDATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/app_db\nNEXTAUTH_SECRET=generate-with-openssl-rand-base64-32\nNEXTAUTH_URL=http://localhost:3000\n# Optional AI configuration\nGEMINI_API_KEY=\nGEMINI_MODEL=gemini-3.6-flash\nGEMINI_PRO_MODEL=gemini-3.6-flash\nGEMINI_EMBEDDING_MODEL=gemini-embedding-001\n# Required for scheduled recovery in production\nCRON_SECRET=\n# Only for deliberate production demo seeding\nSEED_SECRET=",
+                content: "Create .env in the project root (never commit it):\n\nDATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/app_db\nNEXTAUTH_SECRET=generate-with-openssl-rand-base64-32\nNEXTAUTH_URL=http://localhost:3000\n# Optional AI configuration\nGEMINI_API_KEY=\nGEMINI_MODEL=gemini-3.8-flash\nGEMINI_PRO_MODEL=gemini-3.8-flash\nGEMINI_EMBEDDING_MODEL=gemini-embedding-001\n# Required for scheduled recovery in production\nCRON_SECRET=\n# Only for deliberate production demo seeding\nSEED_SECRET=",
               },
               {
                 step: 6,

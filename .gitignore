@@ -65,3 +65,5 @@ coverage/
 service-account*.json
 credentials*.json
 *-service-account*.json
+# TypeScript incremental build cache
+*.tsbuildinfo

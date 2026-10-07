@@ -200,9 +200,14 @@ export default function DocumentsPage() {
                   onChange={(e) => setUploadForm({ ...uploadForm, sessionId: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">No session</option>
+                  <option value="">Workspace (all sessions)</option>
                   {sessions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {uploadForm.sessionId
+                    ? "The Research Agent searches this document inside the selected session."
+                    : "The Research Agent searches this document in every session."}
+                </p>
               </div>
             </div>
 

@@ -39,7 +39,13 @@ export const authOptions: NextAuthOptions = {
             name: user.name,
             role: user.role,
           };
-        } catch {
+        } catch (error) {
+          // Swallowing this made a database outage look exactly like a wrong password,
+          // which is a major reason "nothing works" was undiagnosable.
+          console.error(
+            "Login failed while reading the user record. This is usually an unreachable or unmigrated database, not a bad password:",
+            error,
+          );
           return null;
         }
       },
