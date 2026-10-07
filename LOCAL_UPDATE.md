@@ -129,6 +129,44 @@ Two rules that matter on Neon:
 Leave `EMBEDDING_*` empty unless you want semantic search: Groq has no embeddings API,
 so keyword retrieval is used and everything else works normally.
 
+### Which `.env` lines do I actually fill in?
+
+Only four. Everything else in the file is either already correct or a comment
+(any line starting with `#` is ignored by the app), so leave it untouched.
+
+| Line | Fill in? | Where the value comes from |
+| --- | --- | --- |
+| `DATABASE_URL` | **Yes — required** | Neon dashboard → Connect → **Pooled connection** (host contains `-pooler`) |
+| `DIRECT_URL` | **Yes — required** | Neon dashboard → Connect → **Direct connection** (no `-pooler`) |
+| `NEXTAUTH_SECRET` | **Yes — required** | Run `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
+| `GROQ_API_KEY` | **Yes — required for AI answers** | <https://console.groq.com/keys> → Create API Key (starts with `gsk_`) |
+| `GROQ_MODEL` | No — already set to a working model | Only change it to pick another from <https://console.groq.com/docs/models> |
+| `LLM_BASE_URL` | No — leave it commented out | Uncomment only to use a different OpenAI-compatible provider. When unset, the app already defaults to `https://api.groq.com/openai/v1` |
+| `GROQ_MODEL_PRO` | No — optional | Bigger model for narrative reports; falls back to `GROQ_MODEL` when unset |
+| `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` | No — optional | Only for semantic search. Groq has no embeddings API; keyword retrieval works without them |
+| `CRON_SECRET` / `SEED_SECRET` | No — optional/production only | Needed only for the scheduled worker and production seeding |
+
+`LLM_API_KEY` is also accepted as an alternative name for `GROQ_API_KEY` if you point the
+app at another provider.
+
+> **Careful when pasting:** write plain URLs. Some editors and chat tools render a link
+> as `[https://api.groq.com/openai/v1](https://api.groq.com/openai/v1)` — pasting that
+> into `.env` would give the app a broken address. The correct form is just
+> `LLM_BASE_URL=https://api.groq.com/openai/v1`.
+
+### Saving the file on Windows
+
+* Open it with `notepad .env` from the project folder.
+* Save with **Ctrl+S**. Avoid *Save As*, which can rename the file to `.env.txt` — the app
+  only reads a file named exactly `.env`. If in doubt, run `Get-ChildItem .env*` and check.
+* Notepad's default UTF-8 encoding is fine.
+
+To see only the lines you have actually set, run:
+
+```powershell
+Select-String -Path .env -Pattern '^\s*[^#\s]'
+```
+
 ---
 
 ## 5. Prepare the database
