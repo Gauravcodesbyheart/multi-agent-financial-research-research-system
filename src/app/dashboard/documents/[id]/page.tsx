@@ -174,6 +174,12 @@ export default function DocumentDetailPage() {
     };
   });
 
+  // A failed stage leaves its results missing forever: agent logs are stored per run and
+  // nothing re-runs automatically, so the page must say so and offer the retry. This is
+  // how a document processed before the current AI provider was configured looks — an old
+  // provider error stays on screen with empty Metrics/Risks tabs.
+  const failedStages = agentSummaries.filter((entry) => entry.status === "failed");
+
   const TABS = [
     { id: "overview", label: "Overview", icon: FileText },
     { id: "metrics", label: `Metrics (${metrics.length})`, icon: BarChart2 },
@@ -264,6 +270,30 @@ export default function DocumentDetailPage() {
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-5">
+            {failedStages.length > 0 && (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+                  <div className="flex-1 text-xs text-amber-900">
+                    <p className="font-semibold">
+                      {failedStages.map((entry) => entry.agent).join(", ")} failed, so that output is missing.
+                    </p>
+                    <p className="mt-1">
+                      Re-run the pipeline to process this document again with your current AI provider. The text
+                      stored with the document is reused, so the file does not need uploading again. If the message
+                      below names a provider you no longer use, it is left over from an earlier run.
+                    </p>
+                  </div>
+                  <button
+                    onClick={rerunPipeline}
+                    disabled={reprocessing || ["processing", "indexed"].includes(doc.processingStatus)}
+                    className="flex-shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Re-run pipeline
+                  </button>
+                </div>
+              </div>
+            )}
             <h2 className="font-semibold text-slate-900 mb-4">Agent Processing Summary</h2>
             <div className="space-y-3">
               {agentSummaries.map(({ agent, status, detail, at }) => (
@@ -292,7 +322,12 @@ export default function DocumentDetailPage() {
           {metrics.length === 0 ? (
             <div className="text-center py-12">
               <BarChart2 className="w-12 h-12 text-slate-200 mx-auto mb-3" />
-              <p className="text-slate-400 text-sm">No evidence-backed financial metrics were extracted. Verify the document contains selectable text and explicitly reports the values; AI enrichment is optional.</p>
+              <p className="text-slate-400 text-sm">
+                No evidence-backed financial metrics were extracted.
+                {failedStages.length > 0
+                  ? " The Extraction Agent failed, so this is expected — re-run the pipeline above to try again."
+                  : " Verify the document contains selectable text and explicitly reports the values; AI enrichment is optional."}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
