@@ -649,6 +649,7 @@ state as JSON.
 | Metrics/risks are empty after upload | Processing job did not finish | Check the Documents page status, then `GET /api/worker/documents` with `Authorization: Bearer $CRON_SECRET` to drain queued jobs |
 | `remaining connection slots are reserved` | Using Neon's direct endpoint, or too large a pool per serverless instance | Switch `DATABASE_URL` to the `-pooler` host and keep `DATABASE_POOL_MAX` at 1–2 on serverless |
 | Migrations fail or hang on Neon | DDL was sent through PgBouncer | Set `DIRECT_URL` to Neon's non-pooler host; `drizzle.config.ts` prefers it automatically |
+| A document shows **Metrics (0)** / **Risks (0)**, or an agent error naming an AI provider you no longer use | The document was processed by an earlier version of the app; agent logs are stored per run, so an old failure stays visible | Open the document and click **Re-run pipeline** (or `POST /api/documents/<id>/reprocess`) — each stage replaces its previous results |
 | Semantic search never activates | Groq does not provide an embeddings API | Configure `EMBEDDING_BASE_URL`/`EMBEDDING_API_KEY`/`EMBEDDING_MODEL`; keyword retrieval works without it |
 | Model errors such as "model does not exist" | The model was renamed or decommissioned by Groq | The client retries known-good fallbacks automatically; check `ai.lastNotice` and pin `GROQ_MODEL` |
 

@@ -409,6 +409,7 @@ Next.js 16 App Router (Server)
                   { method: "POST", path: "/api/documents", desc: "Upload document (multipart/form-data)", body: "FormData: file, sessionId?, documentType, fiscalYear, companyName, ticker" },
                   { method: "GET", path: "/api/documents/[id]", desc: "Get accessible document with metrics, risks, chunks, embeddings, and activity" },
                   { method: "POST", path: "/api/documents/[id]/embeddings", desc: "Start semantic indexing for an accessible document" },
+                  { method: "POST", path: "/api/documents/[id]/reprocess", desc: "Re-run indexing, extraction and risk checks on the stored document text (safe to repeat; each stage replaces its previous results)" },
                   { method: "DELETE", path: "/api/documents/[id]", desc: "Delete document" },
                   { method: "GET", path: "/api/worker/documents", desc: "Recover one due job; requires Authorization: Bearer CRON_SECRET" },
                 ],

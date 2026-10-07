@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { ArrowLeft, FileText, BarChart2, AlertTriangle, Loader2, Sparkles, RefreshCw } from "lucide-react";
+import { ArrowLeft, FileText, BarChart2, AlertTriangle, Loader2, Sparkles, RefreshCw, RotateCcw } from "lucide-react";
 
 import { EMBEDDINGS_UNAVAILABLE_REASON, isEmbeddingsUnavailable } from "@/lib/embeddingUiState";
 import Link from "next/link";
@@ -65,6 +65,7 @@ export default function DocumentDetailPage() {
   // not a per-document one: a document can sit at "pending" forever while every click
   // on "Build embeddings" is guaranteed to fail, which reads as a broken button.
   const [embeddingConfigured, setEmbeddingConfigured] = useState<boolean | null>(null);
+  const [reprocessing, setReprocessing] = useState(false);
 
   const reloadDocument = useCallback(async (showLoading = true) => {
     if (!id) {
@@ -132,6 +133,23 @@ export default function DocumentDetailPage() {
     }
   }
 
+  async function rerunPipeline() {
+    if (!id || reprocessing) return;
+    setReprocessing(true);
+    try {
+      const res = await fetch(`/api/documents/${id}/reprocess`, { method: "POST" });
+      const body = await res.json().catch(() => null);
+      if (res.ok) {
+        toast.success(body?.message || "Re-processing started");
+        window.setTimeout(() => void reloadDocument(), 4000);
+      } else {
+        toast.error(body?.error || "Could not re-process this document");
+      }
+    } finally {
+      setReprocessing(false);
+    }
+  }
+
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>;
   if (!data) return <div className="p-6 text-slate-500">Document not found</div>;
 
@@ -150,6 +168,9 @@ export default function DocumentDetailPage() {
       agent,
       status: log?.status || (isProcessing ? "pending" : "not started"),
       detail: log?.details || "Waiting for this pipeline stage.",
+      // Records survive across runs, so show when each stage last reported. Without
+      // this, a failure left over from a previous provider looks like a live error.
+      at: log?.createdAt ? formatDate(log.createdAt) : null,
     };
   });
 
@@ -184,6 +205,15 @@ export default function DocumentDetailPage() {
           >
             {embeddingBusy || doc.embeddingStatus === "processing" ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
             {doc.embeddingStatus === "completed" ? "Rebuild embeddings" : "Build embeddings"}
+          </button>
+          <button
+            onClick={rerunPipeline}
+            disabled={reprocessing || ["processing", "indexed"].includes(doc.processingStatus)}
+            className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Run indexing, extraction and risk checks again using the current AI provider. Safe to repeat: each stage replaces its previous results."
+          >
+            {reprocessing || ["processing", "indexed"].includes(doc.processingStatus) ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+            Re-run pipeline
           </button>
           <span className={`text-xs px-3 py-1 rounded-full font-medium border ${doc.processingStatus === "completed" || doc.processingStatus === "indexed" ? "text-emerald-600 bg-emerald-50 border-emerald-200" : doc.processingStatus === "failed" ? "text-red-600 bg-red-50 border-red-200" : "text-yellow-600 bg-yellow-50 border-yellow-200"}`}>
             {doc.processingStatus}
@@ -236,13 +266,16 @@ export default function DocumentDetailPage() {
           <div className="bg-white rounded-xl border border-slate-200 p-5">
             <h2 className="font-semibold text-slate-900 mb-4">Agent Processing Summary</h2>
             <div className="space-y-3">
-              {agentSummaries.map(({ agent, status, detail }) => (
+              {agentSummaries.map(({ agent, status, detail, at }) => (
                 <div key={agent} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
                   <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${status === "completed" ? "bg-emerald-500" : status === "partial" || status === "skipped" ? "bg-amber-500" : status === "failed" ? "bg-red-500" : status === "running" ? "bg-blue-500 animate-pulse" : "bg-slate-300"}`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-sm font-medium text-slate-700">{agent}</div>
-                      <div className="text-xs text-slate-500 capitalize">{status}</div>
+                      <div className="text-xs text-slate-500 capitalize">
+                        {status}
+                        {at ? <span className="ml-2 text-slate-400 normal-case">{at}</span> : null}
+                      </div>
                     </div>
                     <div className="text-xs text-slate-400 break-words">{detail}</div>
                   </div>
