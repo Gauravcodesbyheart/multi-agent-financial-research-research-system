@@ -162,6 +162,8 @@ export default function DocumentDetailPage() {
   // Treat "no provider configured" as unavailable even when this document's status is
   // something else (pending, failed) - the click cannot succeed in either case.
   const embeddingsUnavailable = isEmbeddingsUnavailable(embeddingConfigured, doc.embeddingStatus);
+  const extractedTextLength = doc.content?.trim().length || 0;
+  const pdfLooksTruncated = /\.pdf$/i.test(doc.fileName) && doc.chunkCount === 1;
   const latestActivity = new Map<string, DocDetail["activity"][number]>();
   for (const log of data.activity) {
     if (!latestActivity.has(log.agentName)) latestActivity.set(log.agentName, log);
@@ -236,6 +238,13 @@ export default function DocumentDetailPage() {
         <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
           <span className="font-medium text-slate-700">Semantic search is off.</span> {EMBEDDINGS_UNAVAILABLE_REASON}{" "}
           <Link href="/dashboard/docs" className="text-violet-600 hover:underline">How to enable it</Link>
+        </p>
+      )}
+
+      {pdfLooksTruncated && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <span className="font-semibold">Only one text chunk was extracted from this PDF ({extractedTextLength.toLocaleString()} characters).</span>{" "}
+          Metrics and risks can only use that extracted text. For a full annual report, inspect Raw Content; if it contains only a cover or a short excerpt, upload a searchable or OCR-processed PDF instead. Re-running cannot recover text that was not extracted.
         </p>
       )}
 

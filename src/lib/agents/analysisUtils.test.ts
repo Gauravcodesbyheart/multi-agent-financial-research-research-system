@@ -11,6 +11,7 @@ import {
   hasValidCitationMarkers,
   keywordRelevance,
   validateGroundedResearchAnswer,
+  unwrapModelRiskItems,
   validateModelRiskItems,
 } from "./analysisUtils";
 
@@ -63,6 +64,14 @@ test("bounded risk context falls back to document edges if no risk terms match",
   assert.ok(excerpt.length <= 500);
   assert.match(excerpt, /^FRONT/);
   assert.match(excerpt, /TAIL$/);
+});
+
+test("unwraps a findings array from the JSON-object response required by Groq", () => {
+  const finding = { risk_type: "Liquidity Risk", title: "Debt pressure" };
+  assert.deepEqual(unwrapModelRiskItems({ findings: [finding] }), [finding]);
+  assert.deepEqual(unwrapModelRiskItems({ findings: [] }), []);
+  assert.deepEqual(unwrapModelRiskItems([finding]), [finding], "legacy array-shaped providers remain supported");
+  assert.deepEqual(unwrapModelRiskItems({ result: [finding] }), []);
 });
 
 test("drops model risk findings whose source quote is fabricated", () => {

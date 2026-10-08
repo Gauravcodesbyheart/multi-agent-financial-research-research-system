@@ -9,7 +9,7 @@
  */
 
 export const EMBEDDINGS_UNAVAILABLE_REASON =
-  "No embeddings provider is configured. Groq has no embeddings API, so semantic search stays off until you set EMBEDDING_BASE_URL, EMBEDDING_API_KEY and EMBEDDING_MODEL in .env. Keyword search works without it.";
+  "No embeddings provider is configured. Groq has no embeddings API. For Ollama on this PC, set EMBEDDING_BASE_URL=http://127.0.0.1:11434/v1, EMBEDDING_API_KEY=ollama and EMBEDDING_MODEL=nomic-embed-text in .env, then restart the app. Keyword search works without embeddings.";
 
 /**
  * @param configured `true`/`false` once the provider config is known, `null` while

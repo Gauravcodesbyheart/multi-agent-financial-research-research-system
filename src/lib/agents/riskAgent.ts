@@ -11,11 +11,12 @@ import {
   detectTextualRedFlags,
   type FinancialSnapshot,
   type RiskFinding,
+  unwrapModelRiskItems,
   validateModelRiskItems,
 } from "./analysisUtils";
 
 const RISK_SYSTEM = `You are a cautious financial red-flag analyst. Identify only material risks explicitly evidenced in the supplied filing.
-Do not infer facts. Every item must contain one exact source_text quote copied from the document. If no concrete item is supported, return an empty JSON array.`;
+Do not infer facts. Every finding must contain one exact source_text quote copied from the document. Respond with a single JSON object containing a findings array. If no concrete item is supported, return {"findings":[]}.`;
 
 function snapshotFromMetric(
   metric: typeof financialMetrics.$inferSelect | undefined,
@@ -135,12 +136,13 @@ export async function scanForRisks(
     try {
       const riskExcerpt = buildRiskEvidenceExcerpt(content);
       const prompt = `Review these excerpts from a financial filing for additional material risks not already covered by deterministic checks.
-Return a JSON array with fields risk_type, severity (critical/high/medium/low), title, description, source_text (an exact quote of at least 12 characters copied from the supplied excerpts), and recommendation.
-Do not fabricate a quote. Return [] if there are no additional supported findings. The excerpts may be discontinuous; the entire filing has already been checked by deterministic rules.
+Return one JSON object with a "findings" array. Each finding must have risk_type, severity (critical/high/medium/low), title, description, source_text (an exact quote of at least 12 characters copied from the supplied excerpts), and recommendation.
+Use this shape: {"findings":[{"risk_type":"Liquidity Risk","severity":"medium","title":"...","description":"...","source_text":"exact quote","recommendation":"..."}]}.
+If there are no additional supported risks, return {"findings":[]}. Do not return a top-level array or fabricate a quote. The excerpts may be discontinuous; the entire filing has already been checked by deterministic rules.
 
 DOCUMENT EXCERPTS:\n${riskExcerpt}`;
-      const modelItems = await generateJsonLlm<unknown>(prompt, RISK_SYSTEM, { maxTokens: 1000 });
-      validatedModelFindings = validateModelRiskItems(modelItems, content);
+      const modelResponse = await generateJsonLlm<unknown>(prompt, RISK_SYSTEM, { maxTokens: 1000 });
+      validatedModelFindings = validateModelRiskItems(unwrapModelRiskItems(modelResponse), content);
       modelStatus = `Validated ${validatedModelFindings.length} additional model findings against source quotes.`;
     } catch (error) {
       modelFailure = String(error).slice(0, 500);

@@ -420,6 +420,16 @@ export function validateModelRiskItems(rawItems: unknown, documentText: string):
   });
 }
 
+/** Unwrap Groq/OpenAI JSON-object mode's envelope while accepting legacy arrays. */
+export function unwrapModelRiskItems(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  const object = payload as Record<string, unknown>;
+  if (Array.isArray(object.findings)) return object.findings;
+  if (Array.isArray(object.risks)) return object.risks;
+  return [];
+}
+
 export function dedupeRiskFindings(items: RiskFinding[]): RiskFinding[] {
   const seen = new Set<string>();
   return items.filter((item) => {

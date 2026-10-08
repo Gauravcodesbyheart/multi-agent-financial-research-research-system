@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  EMBEDDINGS_UNAVAILABLE_REASON,
   canBuildEmbeddings,
   getEmbeddingActionLabel,
   getEmbeddingStatusLabel,
@@ -14,6 +15,12 @@ import {
  * ("No embedding provider is configured") - which looks like a broken feature
  * rather than a missing optional setting.
  */
+test("no-provider guidance gives a working local Ollama configuration", () => {
+  assert.match(EMBEDDINGS_UNAVAILABLE_REASON, /EMBEDDING_BASE_URL=http:\/\/127\.0\.0\.1:11434\/v1/);
+  assert.match(EMBEDDINGS_UNAVAILABLE_REASON, /EMBEDDING_API_KEY=ollama/);
+  assert.match(EMBEDDINGS_UNAVAILABLE_REASON, /EMBEDDING_MODEL=nomic-embed-text/);
+});
+
 test("no provider configured disables the button and never presents stale pending as buildable", () => {
   assert.equal(isEmbeddingsUnavailable(false, "pending"), true);
   assert.equal(getEmbeddingStatusLabel(false, "pending"), "unavailable");
