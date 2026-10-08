@@ -25,6 +25,24 @@ export function isEmbeddingsUnavailable(
   return embeddingStatus === "unavailable";
 }
 
+/** Avoid showing a stale "pending" state when this deployment has no provider. */
+export function getEmbeddingStatusLabel(
+  configured: boolean | null,
+  embeddingStatus: string | undefined,
+): string {
+  if (isEmbeddingsUnavailable(configured, embeddingStatus)) return "unavailable";
+  return embeddingStatus || "pending";
+}
+
+/** A disabled action should explain what is missing, not invite an impossible click. */
+export function getEmbeddingActionLabel(
+  configured: boolean | null,
+  embeddingStatus: string | undefined,
+): string {
+  if (isEmbeddingsUnavailable(configured, embeddingStatus)) return "Provider required";
+  return embeddingStatus === "completed" ? "Rebuild embeddings" : "Build embeddings";
+}
+
 /** Whether the button should be clickable right now. */
 export function canBuildEmbeddings(options: {
   configured: boolean | null;

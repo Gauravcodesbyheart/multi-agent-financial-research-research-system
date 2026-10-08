@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canBuildEmbeddings, isEmbeddingsUnavailable } from "./embeddingUiState";
+import {
+  canBuildEmbeddings,
+  getEmbeddingActionLabel,
+  getEmbeddingStatusLabel,
+  isEmbeddingsUnavailable,
+} from "./embeddingUiState";
 
 /**
  * Regression guard for a confusing first-run experience: the "Build embeddings"
@@ -9,8 +14,10 @@ import { canBuildEmbeddings, isEmbeddingsUnavailable } from "./embeddingUiState"
  * ("No embedding provider is configured") - which looks like a broken feature
  * rather than a missing optional setting.
  */
-test("no provider configured disables the button even when the document looks ready", () => {
+test("no provider configured disables the button and never presents stale pending as buildable", () => {
   assert.equal(isEmbeddingsUnavailable(false, "pending"), true);
+  assert.equal(getEmbeddingStatusLabel(false, "pending"), "unavailable");
+  assert.equal(getEmbeddingActionLabel(false, "pending"), "Provider required");
   const canBuild = canBuildEmbeddings({
     configured: false,
     embeddingStatus: "pending",

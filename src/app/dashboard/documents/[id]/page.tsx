@@ -3,7 +3,12 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { ArrowLeft, FileText, BarChart2, AlertTriangle, Loader2, Sparkles, RefreshCw, RotateCcw } from "lucide-react";
 
-import { EMBEDDINGS_UNAVAILABLE_REASON, isEmbeddingsUnavailable } from "@/lib/embeddingUiState";
+import {
+  EMBEDDINGS_UNAVAILABLE_REASON,
+  getEmbeddingActionLabel,
+  getEmbeddingStatusLabel,
+  isEmbeddingsUnavailable,
+} from "@/lib/embeddingUiState";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import { formatCurrency, formatPercent, formatNumber, formatDate, getSeverityColor } from "@/lib/utils";
@@ -199,7 +204,7 @@ export default function DocumentDetailPage() {
         </div>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <span className={`text-xs px-2.5 py-1 rounded-full font-medium border ${doc.embeddingStatus === "completed" ? "text-emerald-700 bg-emerald-50 border-emerald-200" : doc.embeddingStatus === "failed" ? "text-red-700 bg-red-50 border-red-200" : "text-slate-600 bg-slate-50 border-slate-200"}`}>
-            Embeddings: {doc.embeddingStatus} ({data.embeddingCount}/{doc.chunkCount || 0})
+            Embeddings: {getEmbeddingStatusLabel(embeddingConfigured, doc.embeddingStatus)} ({data.embeddingCount}/{doc.chunkCount || 0})
           </span>
           <button
             onClick={buildEmbeddings}
@@ -210,7 +215,7 @@ export default function DocumentDetailPage() {
               : "Build semantic embeddings for indexed document chunks"}
           >
             {embeddingBusy || doc.embeddingStatus === "processing" ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {doc.embeddingStatus === "completed" ? "Rebuild embeddings" : "Build embeddings"}
+            {getEmbeddingActionLabel(embeddingConfigured, doc.embeddingStatus)}
           </button>
           <button
             onClick={rerunPipeline}
