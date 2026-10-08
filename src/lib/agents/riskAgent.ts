@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { agentLogs, documents, financialMetrics, riskFlags } from "@/db/schema";
 import { generateJsonLlm } from "./llmClient";
 import {
+  buildRiskEvidenceExcerpt,
   dedupeRiskFindings,
   detectFinancialTrendRisks,
   detectMetricAnomalies,
@@ -130,17 +131,20 @@ export async function scanForRisks(
 
     let validatedModelFindings: RiskFinding[] = [];
     let modelStatus = "AI model not configured; deterministic checks used.";
+    let modelFailure: string | undefined;
     try {
-      const prompt = `Review this financial document for additional material risks not already covered by deterministic checks.
-Return a JSON array with fields risk_type, severity (critical/high/medium/low), title, description, source_text (an exact quote of at least 12 characters copied from this document), and recommendation.
-Do not fabricate a quote. Return [] if there are no additional supported findings.
+      const riskExcerpt = buildRiskEvidenceExcerpt(content);
+      const prompt = `Review these excerpts from a financial filing for additional material risks not already covered by deterministic checks.
+Return a JSON array with fields risk_type, severity (critical/high/medium/low), title, description, source_text (an exact quote of at least 12 characters copied from the supplied excerpts), and recommendation.
+Do not fabricate a quote. Return [] if there are no additional supported findings. The excerpts may be discontinuous; the entire filing has already been checked by deterministic rules.
 
-DOCUMENT TEXT:\n${content.length <= 30000 ? content : `${content.slice(0, 15000)}\n[Middle omitted]\n${content.slice(-15000)}`}`;
-      const modelItems = await generateJsonLlm<unknown>(prompt, RISK_SYSTEM);
+DOCUMENT EXCERPTS:\n${riskExcerpt}`;
+      const modelItems = await generateJsonLlm<unknown>(prompt, RISK_SYSTEM, { maxTokens: 1000 });
       validatedModelFindings = validateModelRiskItems(modelItems, content);
       modelStatus = `Validated ${validatedModelFindings.length} additional model findings against source quotes.`;
     } catch (error) {
-      modelStatus = `AI model unavailable; deterministic checks used. ${String(error).slice(0, 300)}`;
+      modelFailure = String(error).slice(0, 500);
+      modelStatus = `Text AI unavailable; deterministic checks used. ${modelFailure}`;
     }
 
     const findings = dedupeRiskFindings([...deterministicFindings, ...validatedModelFindings]);
@@ -163,7 +167,7 @@ DOCUMENT TEXT:\n${content.length <= 30000 ? content : `${content.slice(0, 15000)
       documentId,
       agentName: "Red Flag Agent",
       action: "Red-flag scan complete",
-      status: "completed",
+      status: modelFailure ? "partial" : "completed",
       details: `Persisted ${findings.length} evidence-backed findings. ${modelStatus}`,
       duration: Date.now() - startedAt,
     });

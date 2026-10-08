@@ -35,13 +35,23 @@ const REQUEST_TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || 60_000);
 
 type ErrorKind = "transient" | "model_unavailable" | "permanent";
 
+interface RetryDelayHints {
+  retryAfter?: string | null;
+  retryAfterMs?: string | null;
+  resetTokens?: string | null;
+  resetRequests?: string | null;
+  body?: string;
+}
+
 class LlmHttpError extends Error {
   status: number;
   body: string;
-  constructor(status: number, body: string) {
+  retryHints: RetryDelayHints;
+  constructor(status: number, body: string, retryHints: RetryDelayHints = {}) {
     super(`LLM request failed (HTTP ${status}): ${body.slice(0, 300)}`);
     this.status = status;
     this.body = body;
+    this.retryHints = retryHints;
   }
 }
 
@@ -74,6 +84,45 @@ function classify(error: unknown): ErrorKind {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseDelayMs(value: string | null | undefined, bareNumberUnit: "seconds" | "milliseconds" = "seconds"): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(ms|msec|milliseconds?|s|sec(?:ond)?s?|m|min(?:ute)?s?)?$/i);
+  if (match) {
+    const amount = Number(match[1]);
+    const unit = match[2]?.toLowerCase();
+    if (unit === "ms" || unit === "msec" || unit?.startsWith("millisecond")) return amount;
+    if (unit === "m" || unit?.startsWith("min")) return amount * 60_000;
+    if (unit) return amount * 1000;
+    return amount * (bareNumberUnit === "milliseconds" ? 1 : 1000);
+  }
+
+  // Retry-After may also be an HTTP date rather than a number of seconds.
+  const date = Date.parse(trimmed);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
+}
+
+/** Respect Groq's rate-limit reset hint instead of retrying before its own deadline. */
+export function computeRetryDelayMs(attempt: number, hints: RetryDelayHints = {}): number {
+  const bodyDelay = hints.body?.match(
+    /(?:try\s+again\s+in|retry(?:ing)?\s+(?:after|in)|retryDelay[^0-9]{0,16})\s*(\d+(?:\.\d+)?)\s*(ms|msec|milliseconds?|s|sec(?:ond)?s?|m|min(?:ute)?s?)?/i,
+  );
+  const bodyDelayMs = bodyDelay
+    ? parseDelayMs(`${bodyDelay[1]}${bodyDelay[2] || "s"}`)
+    : undefined;
+  const serverHints = [
+    parseDelayMs(hints.retryAfter),
+    parseDelayMs(hints.retryAfterMs, "milliseconds"),
+    parseDelayMs(hints.resetTokens),
+    parseDelayMs(hints.resetRequests),
+    bodyDelayMs,
+  ].filter((value): value is number => value !== undefined && Number.isFinite(value));
+  const exponentialBackoff = Math.min(1000 * 2 ** Math.max(0, attempt), 8000);
+  // Add a small cushion for clock skew and network transit; cap each wait so a
+  // malformed provider header cannot pin a pipeline invocation indefinitely.
+  return Math.min(Math.max(exponentialBackoff, ...serverHints) + 250, 60_000);
 }
 
 interface ChatMessage {
@@ -124,7 +173,13 @@ async function callOnce({ model, systemInstruction, prompt, json, maxTokens }: C
     });
 
     if (!response.ok) {
-      throw new LlmHttpError(response.status, await response.text().catch(() => ""));
+      const body = await response.text().catch(() => "");
+      throw new LlmHttpError(response.status, body, {
+        retryAfter: response.headers.get("retry-after"),
+        retryAfterMs: response.headers.get("retry-after-ms"),
+        resetTokens: response.headers.get("x-ratelimit-reset-tokens"),
+        resetRequests: response.headers.get("x-ratelimit-reset-requests"),
+      });
     }
 
     const payload = (await response.json()) as {
@@ -164,7 +219,10 @@ async function runCompletion(request: CompletionRequest): Promise<CompletionResu
         const kind = classify(error);
 
         if (kind === "transient" && attempt < MAX_RETRIES) {
-          await sleep(1000 * 2 ** attempt);
+          const retryHints = error instanceof LlmHttpError
+            ? { ...error.retryHints, body: error.body }
+            : { body: String(error) };
+          await sleep(computeRetryDelayMs(attempt, retryHints));
           continue;
         }
         if (kind === "model_unavailable") break; // try the next candidate model
@@ -206,12 +264,28 @@ export async function generateWithLlm(
   return text;
 }
 
+export interface LlmGenerationOptions {
+  model?: string;
+  maxTokens?: number;
+}
+
+/** JSON completion; pass an options object to bound output without changing callers using a model string. */
 export async function generateJsonLlm<T>(
   prompt: string,
   systemInstruction: string,
-  modelName = DEFAULT_LLM_MODEL,
+  modelOrOptions: string | LlmGenerationOptions = DEFAULT_LLM_MODEL,
+  options: LlmGenerationOptions = {},
 ): Promise<T> {
-  const { text } = await runCompletion({ model: modelName, systemInstruction, prompt, json: true });
+  const selected = typeof modelOrOptions === "string"
+    ? { ...options, model: modelOrOptions }
+    : modelOrOptions;
+  const { text } = await runCompletion({
+    model: selected.model || DEFAULT_LLM_MODEL,
+    systemInstruction,
+    prompt,
+    json: true,
+    maxTokens: selected.maxTokens,
+  });
   return parseJsonResponse<T>(text);
 }
 

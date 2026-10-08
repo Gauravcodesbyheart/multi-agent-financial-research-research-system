@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { withJsonModeInstruction } from "./llmClient";
+import { computeRetryDelayMs, withJsonModeInstruction } from "./llmClient";
 
 /**
  * Groq returns 400 `json_validate_failed` when response_format=json_object is sent
@@ -32,4 +32,18 @@ test("errs toward adding the instruction when JSON is only lowercase", () => {
   // rather than risking a 400 from a stricter server.
   const system = withJsonModeInstruction("return json please", "Extract.");
   assert.match(system ?? "", /\bJSON\b/);
+});
+
+test("rate-limit retry uses Groq's fractional-second body hint plus a safety cushion", () => {
+  assert.equal(computeRetryDelayMs(0, { body: "Please try again in 7.41s." }), 7660);
+});
+
+test("rate-limit retry accepts Retry-After seconds, milliseconds, and Groq reset headers", () => {
+  assert.equal(computeRetryDelayMs(0, { retryAfter: "2" }), 2250);
+  assert.equal(computeRetryDelayMs(0, { retryAfterMs: "900" }), 1250);
+  assert.equal(computeRetryDelayMs(0, { resetTokens: "5s" }), 5250);
+});
+
+test("transient failures retain exponential backoff when the provider gives no hint", () => {
+  assert.equal(computeRetryDelayMs(2), 4250);
 });

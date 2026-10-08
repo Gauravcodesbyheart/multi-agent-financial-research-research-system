@@ -173,6 +173,63 @@ export function detectTextualRedFlags(content: string): RiskFinding[] {
   });
 }
 
+const MODEL_RISK_CONTEXT_PATTERNS = [
+  /\b(?:going[- ]concern|substantial doubt)\b/i,
+  /\b(?:material weaknesses?|significant deficiencies|restatements?|non[- ]reliance|accounting irregularit(?:y|ies))\b/i,
+  /\b(?:litigation|lawsuits?|class actions?|investigations?|subpoenas?|enforcement actions?|regulatory actions?)\b/i,
+  /\b(?:debt covenants?|covenant breaches?|defaults?|liquidity shortfalls?|credit facilities|refinancings?)\b/i,
+  /\b(?:impairments?|goodwill|asset write[- ]downs?|restructurings?|reorganizations?)\b/i,
+  /\b(?:cybersecurity|cyber attacks?|data breaches?|security incidents?|privacy incidents?)\b/i,
+  /\b(?:customer concentration|supplier concentration|single[- ]source|supply chain|key suppliers?)\b/i,
+  /\b(?:revenue recognition|fraud|internal controls?|control deficiencies)\b/i,
+  /\b(?:contingencies|environmental remediation|product recalls?|settlements?|penalties|fines)\b/i,
+];
+
+/**
+ * Pick a small set of exact, risk-bearing passages for the supplementary model scan.
+ * Deterministic checks still inspect the full document; sending a whole 10-K here can
+ * exceed Groq's per-minute token budget after the extraction call has just run.
+ */
+export function buildRiskEvidenceExcerpt(content: string, maxChars = 6000): string {
+  if (content.length <= maxChars) return content;
+  if (maxChars <= 0) return "";
+
+  const windows: Array<{ start: number; end: number }> = [];
+  for (const pattern of MODEL_RISK_CONTEXT_PATTERNS) {
+    const match = pattern.exec(content);
+    if (match?.index === undefined) continue;
+    const start = Math.max(0, match.index - 260);
+    const end = Math.min(content.length, match.index + 440);
+    // Nearby risk terms often refer to the same paragraph; don't spend tokens twice.
+    if (windows.some((window) => start < window.end && end > window.start)) continue;
+    windows.push({ start, end });
+  }
+
+  if (windows.length === 0) {
+    const marker = "\n[Middle omitted]\n";
+    if (maxChars <= marker.length) return content.slice(0, maxChars);
+    const available = maxChars - marker.length;
+    const left = Math.floor(available / 2);
+    const right = available - left;
+    return `${content.slice(0, left)}${marker}${content.slice(-right)}`;
+  }
+
+  windows.sort((a, b) => a.start - b.start);
+  const separator = "\n[…other text omitted…]\n";
+  const excerpts: string[] = [];
+  let used = 0;
+  for (const window of windows) {
+    const gap = excerpts.length ? separator : "";
+    const remaining = maxChars - used - gap.length;
+    if (remaining <= 0) break;
+    const excerpt = content.slice(window.start, Math.min(window.end, window.start + remaining)).trim();
+    if (!excerpt) continue;
+    excerpts.push(`${gap}${excerpt}`);
+    used += gap.length + excerpt.length;
+  }
+  return excerpts.join("");
+}
+
 function metricEvidence(snapshot: FinancialSnapshot, metric: FinancialMetricKey, content: string): string | undefined {
   const value = toFiniteNumber(snapshot[metric]);
   if (value === null) return undefined;

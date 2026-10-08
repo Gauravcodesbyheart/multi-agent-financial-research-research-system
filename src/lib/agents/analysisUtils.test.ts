@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildRiskEvidenceExcerpt,
   cosineSimilarity,
   decomposeResearchQuestion,
   detectFinancialTrendRisks,
@@ -40,6 +41,28 @@ test("detects auditor qualification and retains exact source evidence", () => {
   assert.ok(auditorFinding);
   assert.ok(content.includes(auditorFinding.source_text));
   assert.equal(auditorFinding.severity, "critical");
+});
+
+test("bounds the supplementary AI risk context and keeps exact high-signal excerpts", () => {
+  const content = `${"Ordinary filing text with no warning. ".repeat(250)}\n` +
+    "Management disclosed a material weakness in internal control over financial reporting.\n" +
+    `${"Additional ordinary filing text. ".repeat(100)}\n` +
+    "The company experienced a cybersecurity incident affecting customer data.\n" +
+    `${"Appendix text. ".repeat(400)}`;
+  const excerpt = buildRiskEvidenceExcerpt(content, 1800);
+  assert.ok(excerpt.length <= 1800);
+  assert.match(excerpt, /material weakness in internal control/);
+  assert.match(excerpt, /cybersecurity incident affecting customer data/);
+  const passages = excerpt.split(/\n\[…other text omitted…\]\n/);
+  assert.ok(passages.every((passage) => content.includes(passage.trim())));
+});
+
+test("bounded risk context falls back to document edges if no risk terms match", () => {
+  const content = `FRONT ${"neutral content ".repeat(200)} TAIL`;
+  const excerpt = buildRiskEvidenceExcerpt(content, 500);
+  assert.ok(excerpt.length <= 500);
+  assert.match(excerpt, /^FRONT/);
+  assert.match(excerpt, /TAIL$/);
 });
 
 test("drops model risk findings whose source quote is fabricated", () => {
