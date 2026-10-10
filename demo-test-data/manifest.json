@@ -1,0 +1,198 @@
+[
+  {
+    "company": "Apple Inc.",
+    "ticker": "AAPL",
+    "fy": 2023,
+    "file": "Apple/Apple_Annual_Report_FY2023.pdf",
+    "bytes": 16997
+  },
+  {
+    "company": "Apple Inc.",
+    "ticker": "AAPL",
+    "fy": 2024,
+    "file": "Apple/Apple_Annual_Report_FY2024.pdf",
+    "bytes": 16996
+  },
+  {
+    "company": "Apple Inc.",
+    "ticker": "AAPL",
+    "fy": 2025,
+    "file": "Apple/Apple_Annual_Report_FY2025.pdf",
+    "bytes": 17001
+  },
+  {
+    "company": "Apple Inc.",
+    "ticker": "AAPL",
+    "fy": 2026,
+    "file": "Apple/Apple_Annual_Report_FY2026.pdf",
+    "bytes": 16998
+  },
+  {
+    "company": "Microsoft Corporation",
+    "ticker": "MSFT",
+    "fy": 2023,
+    "file": "Microsoft/Microsoft_Annual_Report_FY2023.pdf",
+    "bytes": 17136
+  },
+  {
+    "company": "Microsoft Corporation",
+    "ticker": "MSFT",
+    "fy": 2024,
+    "file": "Microsoft/Microsoft_Annual_Report_FY2024.pdf",
+    "bytes": 17142
+  },
+  {
+    "company": "Microsoft Corporation",
+    "ticker": "MSFT",
+    "fy": 2025,
+    "file": "Microsoft/Microsoft_Annual_Report_FY2025.pdf",
+    "bytes": 17144
+  },
+  {
+    "company": "Microsoft Corporation",
+    "ticker": "MSFT",
+    "fy": 2026,
+    "file": "Microsoft/Microsoft_Annual_Report_FY2026.pdf",
+    "bytes": 17147
+  },
+  {
+    "company": "Tesla, Inc.",
+    "ticker": "TSLA",
+    "fy": 2023,
+    "file": "Tesla/Tesla_Annual_Report_FY2023.pdf",
+    "bytes": 16922
+  },
+  {
+    "company": "Tesla, Inc.",
+    "ticker": "TSLA",
+    "fy": 2024,
+    "file": "Tesla/Tesla_Annual_Report_FY2024.pdf",
+    "bytes": 16921
+  },
+  {
+    "company": "Tesla, Inc.",
+    "ticker": "TSLA",
+    "fy": 2025,
+    "file": "Tesla/Tesla_Annual_Report_FY2025.pdf",
+    "bytes": 17687
+  },
+  {
+    "company": "Tesla, Inc.",
+    "ticker": "TSLA",
+    "fy": 2026,
+    "file": "Tesla/Tesla_Annual_Report_FY2026.pdf",
+    "bytes": 18203
+  },
+  {
+    "company": "Amazon.com, Inc.",
+    "ticker": "AMZN",
+    "fy": 2023,
+    "file": "Amazon/Amazon_Annual_Report_FY2023.pdf",
+    "bytes": 16925
+  },
+  {
+    "company": "Amazon.com, Inc.",
+    "ticker": "AMZN",
+    "fy": 2024,
+    "file": "Amazon/Amazon_Annual_Report_FY2024.pdf",
+    "bytes": 16930
+  },
+  {
+    "company": "Amazon.com, Inc.",
+    "ticker": "AMZN",
+    "fy": 2025,
+    "file": "Amazon/Amazon_Annual_Report_FY2025.pdf",
+    "bytes": 16930
+  },
+  {
+    "company": "Amazon.com, Inc.",
+    "ticker": "AMZN",
+    "fy": 2026,
+    "file": "Amazon/Amazon_Annual_Report_FY2026.pdf",
+    "bytes": 16933
+  },
+  {
+    "company": "Reliance Industries Limited",
+    "ticker": "RELIANCE",
+    "fy": 2023,
+    "file": "Reliance-Industries/Reliance-Industries_Annual_Report_FY2023.pdf",
+    "bytes": 16999
+  },
+  {
+    "company": "Reliance Industries Limited",
+    "ticker": "RELIANCE",
+    "fy": 2024,
+    "file": "Reliance-Industries/Reliance-Industries_Annual_Report_FY2024.pdf",
+    "bytes": 16999
+  },
+  {
+    "company": "Reliance Industries Limited",
+    "ticker": "RELIANCE",
+    "fy": 2025,
+    "file": "Reliance-Industries/Reliance-Industries_Annual_Report_FY2025.pdf",
+    "bytes": 16999
+  },
+  {
+    "company": "Reliance Industries Limited",
+    "ticker": "RELIANCE",
+    "fy": 2026,
+    "file": "Reliance-Industries/Reliance-Industries_Annual_Report_FY2026.pdf",
+    "bytes": 17001
+  },
+  {
+    "company": "Infosys Limited",
+    "ticker": "INFY",
+    "fy": 2023,
+    "file": "Infosys/Infosys_Annual_Report_FY2023.pdf",
+    "bytes": 17111
+  },
+  {
+    "company": "Infosys Limited",
+    "ticker": "INFY",
+    "fy": 2024,
+    "file": "Infosys/Infosys_Annual_Report_FY2024.pdf",
+    "bytes": 17111
+  },
+  {
+    "company": "Infosys Limited",
+    "ticker": "INFY",
+    "fy": 2025,
+    "file": "Infosys/Infosys_Annual_Report_FY2025.pdf",
+    "bytes": 17111
+  },
+  {
+    "company": "Infosys Limited",
+    "ticker": "INFY",
+    "fy": 2026,
+    "file": "Infosys/Infosys_Annual_Report_FY2026.pdf",
+    "bytes": 17111
+  },
+  {
+    "company": "Tata Consultancy Services Limited",
+    "ticker": "TCS",
+    "fy": 2023,
+    "file": "TCS/TCS_Annual_Report_FY2023.pdf",
+    "bytes": 17216
+  },
+  {
+    "company": "Tata Consultancy Services Limited",
+    "ticker": "TCS",
+    "fy": 2024,
+    "file": "TCS/TCS_Annual_Report_FY2024.pdf",
+    "bytes": 17216
+  },
+  {
+    "company": "Tata Consultancy Services Limited",
+    "ticker": "TCS",
+    "fy": 2025,
+    "file": "TCS/TCS_Annual_Report_FY2025.pdf",
+    "bytes": 17216
+  },
+  {
+    "company": "Tata Consultancy Services Limited",
+    "ticker": "TCS",
+    "fy": 2026,
+    "file": "TCS/TCS_Annual_Report_FY2026.pdf",
+    "bytes": 17216
+  }
+]
