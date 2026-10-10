@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { analysisReports, financialMetrics, riskFlags, companies, documents, agentLogs } from "@/db/schema";
 import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { DEFAULT_LLM_PRO_MODEL, generateWithLlm } from "./llmClient";
+import { describeNarrativeFallbackReason } from "./aiStatus";
 
 function extractMarkdownSection(markdown: string, heading: string): string | undefined {
   const lines = markdown.split(/\r?\n/);
@@ -180,7 +181,9 @@ Write in professional analyst prose. Be specific with numbers. Cite data directl
     try {
       fullReport = await generateWithLlm(reportPrompt, undefined, DEFAULT_LLM_PRO_MODEL);
     } catch (error) {
-      fullReport = createLocalReport(companyProfiles, String(error));
+      // Never paste the raw provider error into the report — map it to clean,
+      // provider-accurate guidance (see describeNarrativeFallbackReason).
+      fullReport = createLocalReport(companyProfiles, describeNarrativeFallbackReason(error));
     }
 
     fullReport = replaceOrInsertMarkdownSection(
@@ -226,12 +229,12 @@ Write in professional analyst prose. Be specific with numbers. Cite data directl
         keyFindings: {
           totalCompanies: companiesData.length,
           totalRisks: risksData.length,
-          criticalRisks: risksData.filter((r) => r.risk_flags.severity === "critical").length,
+          criticalRisks: risksData.filter((row) => row.risk_flags.severity === "critical").length,
         },
         riskSummary: {
           byCompany: companiesData.map((co) => ({
             company: co.name,
-            risks: risksData.filter((r) => r.documents.companyId === co.id).length,
+            risks: risksData.filter((row) => row.documents.companyId === co.id).length,
           })),
         },
         status: "completed",
@@ -293,7 +296,7 @@ function createLocalReport(profiles: LocalReportProfile[], reason: string): stri
   const companySections = profiles.map((profile) => {
     const metrics = profile.metrics;
     const risks = profile.risks.length > 0
-      ? profile.risks.map((risk) => `- ${risk.severity}: ${risk.title} (${risk.type}); source: ${risk.sourceDocument}${risk.sourceText ? `; evidence: \"${risk.sourceText}\"` : ""}`).join("\n")
+      ? profile.risks.map((risk) => `- ${risk.severity}: ${risk.title} (${risk.type}); source: ${risk.sourceDocument}${risk.sourceText ? `; evidence: \\"${risk.sourceText}\\"` : ""}`).join("\n")
       : "- No stored risk flags were found for the selected documents.";
 
     return `## ${profile.company}
@@ -335,5 +338,5 @@ ${companySections || "No risk information is available."}
 - Treat red flags as screening signals, not investment advice.
 
 # DISCLAIMER
-This local report uses stored document-derived data only. AI narrative detail was unavailable (${reason}). It is informational and not investment advice.`;
+This local report uses stored document-derived data only. AI narrative detail was unavailable: ${reason}. It is informational and not investment advice.`;
 }
