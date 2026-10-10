@@ -88,17 +88,41 @@ export async function POST(req: NextRequest) {
     let content = "";
 
     if (fileExtension === "pdf") {
+      // Try the modern, bundler-safe parser first (unpdf); fall back to pdf-parse.
+      let extracted = "";
+      let lastError: unknown = null;
       try {
-        // Load the runtime parser directly; the package wrapper can run its test fixture in server bundles.
-        const pdfParse = require("pdf-parse/lib/pdf-parse.js");
-        const data = await pdfParse(buffer);
-        content = data.text.trim();
-        if (!content) {
-          return NextResponse.json({ error: "This PDF contains no selectable text. OCR the scanned PDF and upload it again." }, { status: 422 });
-        }
+        const { extractText, getDocumentProxy } = await import("unpdf");
+        const pdf = await getDocumentProxy(new Uint8Array(buffer));
+        const result = await extractText(pdf, { mergePages: true });
+        extracted = (result.text || "").trim();
       } catch (error) {
-        console.error(`PDF text extraction failed for ${file.name}:`, error);
-        return NextResponse.json({ error: "Could not extract text from this PDF. Upload a searchable PDF or an OCR-processed copy." }, { status: 422 });
+        lastError = error;
+        try {
+          // Load the runtime parser directly; the package wrapper can run its test fixture in server bundles.
+          const pdfParse = require("pdf-parse/lib/pdf-parse.js");
+          const data = await pdfParse(buffer);
+          extracted = (data.text || "").trim();
+        } catch (fallbackError) {
+          lastError = fallbackError;
+        }
+      }
+      content = extracted;
+      if (!content) {
+        const detail =
+          lastError instanceof Error
+            ? ` (${lastError.name}: ${lastError.message.slice(0, 160)})`
+            : "";
+        console.error(`PDF text extraction failed for ${file.name}:`, lastError);
+        return NextResponse.json(
+          {
+            error:
+              `Could not extract text from this PDF${detail}. ` +
+              "This usually means the file is corrupted or not a real PDF (e.g. a saved error page). " +
+              "Re-download the file or re-generate it, then upload a searchable PDF.",
+          },
+          { status: 422 },
+        );
       }
     } else if (fileExtension === "docx") {
       try {
