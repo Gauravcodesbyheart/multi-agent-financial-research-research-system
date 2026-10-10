@@ -168,7 +168,7 @@ export default function DocumentDetailPage() {
   for (const log of data.activity) {
     if (!latestActivity.has(log.agentName)) latestActivity.set(log.agentName, log);
   }
-  const agentSummaries = ["Document Agent", "Extraction Agent", "Red Flag Agent", "Embedding Agent", "Pipeline Orchestrator"].map((agent) => {
+    const agentSummaries = ["Validation Agent", "Document Agent", "Extraction Agent", "Red Flag Agent", "Embedding Agent", "Pipeline Orchestrator"].map((agent) => {
     const log = latestActivity.get(agent);
     const isProcessing = ["processing", "indexed"].includes(doc.processingStatus);
     return {

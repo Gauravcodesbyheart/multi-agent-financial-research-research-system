@@ -6,6 +6,7 @@ import { documents, companies, researchSessions, documentProcessingJobs } from "
 import { eq, desc, and } from "drizzle-orm";
 import { isUuid } from "@/lib/validation";
 import { processDocumentJob } from "@/lib/agents/orchestrator";
+import { validateFinancialDocument, logDocumentValidation } from "@/lib/agents/validationAgent";
 
 export const maxDuration = 300;
 
@@ -115,6 +116,21 @@ export async function POST(req: NextRequest) {
 
     if (!content) return NextResponse.json({ error: "The uploaded document is empty." }, { status: 422 });
 
+    // --- Validation Agent: is this really a financial document? --------------
+    // Runs for ALL file types (PDF, DOCX and TXT) after text extraction.
+    const validation = await validateFinancialDocument(content, file.name);
+    if (!validation.isFinancial) {
+      return NextResponse.json(
+        {
+          error:
+            `This file does not look like a financial document (looks like: ${validation.documentTypeGuess}). ` +
+            validation.reasons.slice(0, 2).join(" ") +
+            " Supported inputs: annual reports, financial statements, and regulatory filings (PDF, DOCX or TXT).",
+        },
+        { status: 422 },
+      );
+    }
+
     // PostgreSQL text fields cannot contain NUL bytes. Some generated PDFs include
     // citation markers containing \x00, so remove only that invalid character.
     content = content.replace(/\u0000/g, "");
@@ -163,6 +179,9 @@ export async function POST(req: NextRequest) {
         .returning();
       return { doc: createdDocument, job: createdJob };
     });
+
+    // Validation Agent: record the type check in this document's activity trail.
+    await logDocumentValidation(doc.id, validation);
 
     // Start immediately; the persisted queued job can also be recovered by the scheduled worker.
     after(async () => {
