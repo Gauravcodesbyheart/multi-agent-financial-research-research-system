@@ -72,12 +72,6 @@ function slide(title, person, kicker) {
     doc.setTextColor(147, 197, 253);
     doc.text(clean(kicker), 16, 26.5);
   }
-  // person pill (right of band)
-  doc.setFillColor(...GOLD2);
-  doc.roundedRect(W - 62, 8, 46, 14, 7, 7, "F");
-  doc.setFont("Montserrat", "bold"); doc.setFontSize(10.5);
-  doc.setTextColor(...NAVY);
-  doc.text(clean(person), W - 39, 17.2, { align: "center" });
   // footer
   doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.4);
   doc.line(16, H - 10, W - 16, H - 10);
@@ -156,12 +150,6 @@ function arrowDown(x, y1, y2) {
     doc.addImage(img(path.join(OUT, "assets/hero.jpg")), "JPEG", 188, 0, 151, H);
     doc.setFillColor(...NAVY); doc.rect(182, 0, 10, H, "F");
   } catch (e) {}
-  doc.setFillColor(...GOLD2);
-  doc.roundedRect(16, 14, 46, 13, 6.5, 6.5, "F");
-  doc.setFont("Montserrat", "bold"); doc.setFontSize(10.5);
-  doc.setTextColor(...NAVY);
-  doc.text("PERSON 1", 39, 22.7, { align: "center" });
-
   doc.setFont("Montserrat", "bold"); doc.setFontSize(38);
   doc.setTextColor(...WHITE);
   doc.text("FinResearch AI", 16, 56);
@@ -380,12 +368,6 @@ doc.addPage([W, H]);
 doc.setFillColor(...NAVY); doc.rect(0, 0, W, H, "F");
 doc.setFillColor(...GOLD2);
 doc.rect(0, 0, W, 2.4, "F");
-doc.setFillColor(...GOLD2);
-doc.roundedRect(16, 14, 46, 13, 6.5, 6.5, "F");
-doc.setFont("Montserrat", "bold"); doc.setFontSize(10.5);
-doc.setTextColor(...NAVY);
-doc.text("PERSON 5", 39, 22.7, { align: "center" });
-
 doc.setFont("Montserrat", "bold"); doc.setFontSize(30); doc.setTextColor(...WHITE);
 doc.text("Why It Matters", 16, 58);
 doc.setFillColor(...GOLD2); doc.rect(16, 64, 36, 2.2, "F");
