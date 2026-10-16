@@ -67,3 +67,5 @@ credentials*.json
 *-service-account*.json
 # TypeScript incremental build cache
 *.tsbuildinfo
+.vercel
+.env*

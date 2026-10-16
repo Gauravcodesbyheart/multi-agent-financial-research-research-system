@@ -6,6 +6,7 @@ import { documents, financialMetrics, riskFlags, documentChunks, agentLogs } fro
 import { eq, and, desc } from "drizzle-orm";
 import { isUuid } from "@/lib/validation";
 
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

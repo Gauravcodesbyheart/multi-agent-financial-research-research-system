@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   FileText, FolderOpen, BarChart2, TrendingUp, AlertTriangle,
   BookOpen, Brain, ArrowRight, Activity, Bot, ChevronRight,
-  Loader2, RefreshCw
+  Loader2, RefreshCw, ShieldCheck
 } from "lucide-react";
 import { formatCurrency, formatDate, getStatusColor, truncate } from "@/lib/utils";
 import toast from "react-hot-toast";
@@ -111,8 +111,9 @@ export default function DashboardPage() {
             All Agents Active
           </span>
         </div>
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
           {[
+            { name: "Validation Agent", desc: "Doc type check", color: "from-emerald-500 to-green-600", icon: ShieldCheck },
             { name: "Document Agent", desc: "Parse & chunk", color: "from-blue-500 to-blue-600", icon: FileText },
             { name: "Extraction Agent", desc: "KPIs & ratios", color: "from-violet-500 to-violet-600", icon: BarChart2 },
             { name: "Risk Agent", desc: "Red flags", color: "from-orange-500 to-red-600", icon: AlertTriangle },

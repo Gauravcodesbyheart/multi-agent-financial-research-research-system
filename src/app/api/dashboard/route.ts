@@ -44,9 +44,17 @@ export async function GET() {
   const logConditions: SQL<unknown>[] = [];
   if (visibleSessionIds.length > 0) logConditions.push(inArray(agentLogs.sessionId, visibleSessionIds));
   if (visibleDocumentIds.length > 0) logConditions.push(inArray(agentLogs.documentId, visibleDocumentIds));
-  const recentAgentActivity = logConditions.length > 0
-    ? await db.select().from(agentLogs).where(or(...logConditions)).orderBy(desc(agentLogs.createdAt)).limit(10)
+    const recentLogs = logConditions.length > 0
+    ? await db.select().from(agentLogs).where(or(...logConditions)).orderBy(desc(agentLogs.createdAt)).limit(50)
     : [];
+  // Show each agent's LATEST activity once, so the panel always shows the full
+  // team instead of being crowded out by whichever agent ran most recently.
+  const seenAgents = new Set<string>();
+  const recentAgentActivity = recentLogs.filter((log) => {
+    if (seenAgents.has(log.agentName)) return false;
+    seenAgents.add(log.agentName);
+    return true;
+  }).slice(0, 10);
   const metricsChartData = visibleDocumentIds.length > 0
     ? await db.select({ metrics: financialMetrics, company: companies })
       .from(financialMetrics)
