@@ -6,7 +6,7 @@ FinResearch AI is a full-stack **multi-agent AI system for financial research an
 
 It helps finance students, MBA candidates, researchers, and early-career analysts analyze financial documents such as annual reports, 10-K filings, earnings transcripts, investor presentations, and other business documents.
 
-Instead of manually extracting financial metrics, searching through lengthy reports, identifying risks, comparing companies, and preparing research reports, FinResearch AI combines **document processing, specialized AI agents, structured financial data, risk analysis, benchmarking, and evidence-based research** in one platform.
+Instead of manually extracting financial metrics, searching through lengthy reports, identifying risks, comparing companies, and preparing research reports, FinResearch AI combines **document validation, document processing, eight specialized AI agents, structured financial data, risk analysis, benchmarking, and evidence-based research** in one platform.
 
 > **Disclaimer:** FinResearch AI is an educational and research tool. Its output is informational and should not be considered investment, legal, accounting, or tax advice. Important financial values should always be verified against the original source document.
 
@@ -24,14 +24,22 @@ Upload and analyze:
 
 The document processing pipeline extracts readable text, cleans and normalizes it, identifies sections, creates searchable chunks, and stores the resulting evidence for downstream analysis.
 
+Every upload passes the **Validation Agent** first. Non-financial files (resumes, invoices, recipes, novels, academic papers, source code, cover letters) are rejected before processing with a clear `422` message that names the detected type, for example:
+
+```text
+This file does not look like a financial document (looks like: Resume/CV).
+Supported inputs: annual reports, financial statements, and regulatory filings (PDF, DOCX or TXT).
+```
+
 > Scanned or image-only PDFs may require OCR before reliable text extraction.
 
 ### 🤖 Multi-Agent AI Pipeline
 
-FinResearch AI coordinates the following agents in a sequential document-processing pipeline, with research and report agents invoked by the user:
+FinResearch AI coordinates **eight specialized agents**: a validation gate on every upload, a sequential document-processing pipeline (Document → Extraction → Red Flag → Embedding), and research, report, and benchmark agents invoked by the user.
 
 | Agent | Responsibility |
 | --- | --- |
+| **Validation Agent** | Confirms every upload is really a financial document; rejects wrong file types with a typed reason (e.g. "looks like: Resume/CV") before any processing begins. |
 | **Document Agent** | Cleans, sections, chunks, and indexes text; never invents page numbers. |
 | **Extraction Agent** | Extracts financial metrics, validates model values against exact source quotes, and fills supported fields with a local parser. |
 | **Red Flag Agent** | Detects quote-backed disclosure signals, unusual financial values, rising debt, and falling margins; validates any model-added finding against exact source text. |
@@ -124,7 +132,15 @@ Compare cash flow and debt-to-equity across two companies.
 What evidence supports the concentration risk?
 ```
 
-The Research Agent decomposes compound questions into retrieval steps and searches the active session's documents plus every session-less workspace document, so uploads made under the default “Workspace” option are always reachable. Every chat history read, message write, and research retrieval checks that the signed-in user owns the requested session; document and message queries are scoped to that user as well. It uses semantic embeddings when a separate embeddings provider is configured and every chunk in the collection has a compatible vector; otherwise it falls back to local keyword ranking (which needs no external service). Model output is structured as individual claims; before display, every claim must use a retrieved source ID, include an exact quote found in that cited excerpt, and preserve numeric values, currencies, scales, and percentage units from the quote. Invalid claims are omitted, and a transparent evidence-only excerpt summary is used if generation or validation fails; when the research pipeline itself fails, the API returns an error rather than fabricating a chat answer. This deterministic source check improves auditability but does not prove that every paraphrase is semantically entailed; verify consequential conclusions in the original filing.
+The Research Agent decomposes compound questions into retrieval steps and searches the active session's documents plus every session-less workspace document, so uploads made under the default "Workspace" option are always reachable. Every chat history read, message write, and research retrieval checks that the signed-in user owns the requested session; document and message queries are scoped to that user as well. It uses semantic embeddings when a separate embeddings provider is configured and every chunk in the collection has a compatible vector; otherwise it falls back to local keyword ranking (which needs no external service). Model output is structured as individual claims; before display, every claim must use a retrieved source ID, include an exact quote found in that cited excerpt, and preserve numeric values, currencies, scales, and percentage units from the quote. Invalid claims are omitted, and a transparent evidence-only excerpt summary is used if generation or validation fails; when the research pipeline itself fails, the API returns an error rather than fabricating a chat answer. This deterministic source check improves auditability but does not prove that every paraphrase is semantically entailed; verify consequential conclusions in the original filing.
+
+The Research Agent answers in one of **three modes**:
+
+1. **Document-grounded answers** (default for document questions) — every claim carries an inline `[S1]`-style citation and an exact quote from the retrieved excerpt; unsupported claims are dropped before display.
+2. **Conversational intro** — greetings and meta questions such as "hi" or "what can you do?" get a short capability introduction instead of a pointless retrieval run.
+3. **Labelled general knowledge** — questions the filings cannot answer (for example "what is gross margin?") receive a general answer that is clearly badged `GENERAL INFORMATION -- not from your uploaded documents and not verified against any source:`, with a tip to ask about the uploaded documents. No numbers are invented in this mode.
+
+Named-file targeting: a question that names a specific PDF (for example "according to apple-10k.pdf ...") searches only that document, with filler words stripped from the query.
 
 ### 🔄 Local Fallback Mode
 
@@ -141,9 +157,9 @@ Groq enriches the workflow but is not required for core evidence processing. Wit
                                     │
                                     ▼
                          ┌──────────────────────┐
-                         │      Next.js 16      │
-                         │      React 19        │
-                         │      App Router      │
+                         │   Next.js 16         │
+                         │   React 19           │
+                         │   App Router         │
                          └──────────┬───────────┘
                                     │
               ┌─────────────────────┼─────────────────────┐
@@ -151,37 +167,38 @@ Groq enriches the workflow but is not required for core evidence processing. Wit
               ▼                     ▼                     ▼
        ┌─────────────┐      ┌──────────────┐      ┌──────────────┐
        │  NextAuth   │      │  API Routes  │      │  Dashboard   │
-       │Authentication│      │              │      │     UI       │
+       │Authentication│      │ (protected)  │      │     UI       │
        └─────────────┘      └──────┬───────┘      └──────────────┘
-                                    │
-                                    ▼
-                         ┌──────────────────────┐
-                         │   Multi-Agent Layer  │
-                         └──────────┬───────────┘
-                                    │
-          ┌─────────────────────────┼─────────────────────────┐
-          │                         │                         │
-          ▼                         ▼                         ▼
- ┌────────────────┐       ┌────────────────┐       ┌────────────────┐
- │ Document Agent │       │Extraction Agent│       │   Risk Agent   │
- └────────────────┘       └────────────────┘       └────────────────┘
-          │                         │                         │
-          └─────────────────────────┼─────────────────────────┘
-                                    │
-                       ┌────────────┴────────────┐
-                       │                         │
-                       ▼                         ▼
-              ┌────────────────┐       ┌──────────────────┐
-              │Benchmark Agent │       │ Research Agent   │
-              └────────────────┘       └────────┬─────────┘
-                                                 │
-                         ┌───────────────────────┼──────────────────────┐
-                         │                       │                      │
-                         ▼                       ▼                      ▼
-                 ┌──────────────┐       ┌──────────────┐       ┌──────────────┐
-                 │ PostgreSQL   │       │  Groq (LLM)  │       │   Document   │
-                 │ + Drizzle ORM│       │     API      │       │  Processing  │
-                 └──────────────┘       └──────────────┘       └──────────────┘
+                                   │
+                                   ▼
+                        ┌────────────────────┐
+                        │     Orchestrator   │
+                        │  (durable PG jobs) │
+                        └─────────┬──────────┘
+                                  │
+    EVERY UPLOAD (pipeline)       │        ON DEMAND (user-triggered)
+    ──────────────────────        │        ──────────────────────────
+    ┌────────────────────┐        │        ┌────────────────────┐
+    │  Validation Agent  │        │        │   Research Agent   │
+    ├────────────────────┤        │        ├────────────────────┤
+    │   Document Agent   │        │        │    Report Agent    │
+    ├────────────────────┤        │        ├────────────────────┤
+    │  Extraction Agent  │        │        │  Benchmark Agent   │
+    ├────────────────────┤        │        └─────────┬──────────┘
+    │    Risk Agent      │        │                  │
+    ├────────────────────┤        │                  │
+    │  Embedding Agent   │        │                  │
+    └─────────┬──────────┘        │                  │
+              └─────────────┬─────┴──────────────────┘
+                            │
+                            ▼
+        ┌───────────────────────────────────────┐
+        │   PostgreSQL + Drizzle ORM (evidence) │
+        │   Groq LLM API (optional enrichment)  │
+        │   Document Processing (pdf-parse,     │
+        │   mammoth) · Embeddings (optional,    │
+        │   separate provider)                  │
+        └───────────────────────────────────────┘
 ```
 
 ---
@@ -190,6 +207,9 @@ Groq enriches the workflow but is not required for core evidence processing. Wit
 
 ```text
 Upload document + durable PostgreSQL job (atomic transaction)
+      │
+      ▼
+Validation Agent: reject non-financial files with a typed reason (422)
       │
       ▼
 Immediate `after()` trigger; scheduled worker recovers queued/stale jobs
@@ -208,10 +228,15 @@ Embedding Agent: optional vectors from a separate embeddings provider (Groq has 
       │
       └──► document status: completed / partial / failed
 
-Research UI: decompose question → retrieve session chunks → cite source excerpts
+Research UI: three answer modes — cited document answers, conversational intro,
+             labelled general knowledge; decompose → retrieve → cite excerpts
 Benchmark UI: compare accessible companies and period-tagged latest metrics
 Report Agent: Executive Summary + deterministic Key Financials + analysis
 ```
+
+### Validation Agent
+
+Runs on **every upload** (PDF, DOCX and TXT) immediately after text extraction, before anything else is stored. It scores the text for financial-document structure (section titles such as "Consolidated Statements of Operations", `LABEL: value` financial tables, finance vocabulary, `$`/`%` figures, period headers) and recognises wrong types (Resume/CV, Invoice, Recipe, Book, Academic paper, Source code, Slides, cover letters). A file that is not a financial document is rejected with a `422` response naming the detected type, so users get an actionable message instead of an empty analysis later.
 
 ### Document Agent
 
@@ -256,11 +281,12 @@ Compares companies using stored financial metrics and risk information.
 The Research Agent:
 
 1. Receives a user question
-2. Searches relevant document chunks
-3. Retrieves stored metrics
-4. Retrieves risk information
-5. Sends relevant evidence to the LLM when available
-6. Produces an evidence-grounded response with source references
+2. Detects the answer mode (document question, greeting/meta, or general knowledge)
+3. Searches relevant document chunks (named-file targeting when the question names a PDF)
+4. Retrieves stored metrics
+5. Retrieves risk information
+6. Sends relevant evidence to the LLM when available
+7. Produces an evidence-grounded response with source references — or a clearly labelled general answer when the documents cannot answer
 
 The system is designed to ground responses in retrieved document evidence; important financial values should still be verified against the original filing.
 
@@ -310,7 +336,7 @@ Semantic vectors are currently stored as JSONB arrays with their model name. Sim
 
 ## Deployment
 
-* **Vercel**
+* **Render** (live web service)
 * **Neon PostgreSQL**
 * Groq console (console.groq.com/keys)
 
@@ -327,27 +353,37 @@ finresearch-ai/
 │   ├── app/
 │   │   ├── api/
 │   │   │   ├── auth/
+│   │   │   │   ├── [...nextauth]/
+│   │   │   │   └── register/
 │   │   │   ├── benchmark/
 │   │   │   ├── chat/
 │   │   │   ├── companies/
 │   │   │   ├── dashboard/
 │   │   │   ├── documents/
+│   │   │   │   └── [id]/
+│   │   │   │       ├── embeddings/
+│   │   │   │       └── reprocess/
 │   │   │   ├── health/
 │   │   │   ├── metrics/
 │   │   │   ├── reports/
+│   │   │   │   └── [id]/
 │   │   │   ├── risks/
 │   │   │   ├── seed/
 │   │   │   ├── sessions/
-│   │   │   └── worker/documents/
+│   │   │   │   └── [id]/
+│   │   │   └── worker/
+│   │   │       └── documents/
 │   │   │
 │   │   ├── dashboard/
 │   │   │   ├── benchmark/
 │   │   │   ├── companies/
+│   │   │   ├── docs/
 │   │   │   ├── documents/
 │   │   │   ├── metrics/
 │   │   │   ├── reports/
 │   │   │   ├── research/
-│   │   │   └── risks/
+│   │   │   ├── risks/
+│   │   │   └── sessions/
 │   │   │
 │   │   ├── login/
 │   │   ├── register/
@@ -359,14 +395,19 @@ finresearch-ai/
 │   │
 │   └── lib/
 │       ├── agents/
-│       │   ├── orchestrator.ts
-│       │   ├── documentAgent.ts
-│       │   ├── extractionAgent.ts
-│       │   ├── riskAgent.ts
-│       │   ├── embeddingAgent.ts
-│       │   ├── benchmarkAgent.ts
-│       │   ├── researchAgent.ts
-│       │   └── reportAgent.ts
+│       │   ├── orchestrator.ts        # durable job pipeline
+│       │   ├── validationAgent.ts     # rejects non-financial uploads
+│       │   ├── documentAgent.ts       # parse, chunk, index
+│       │   ├── extractionAgent.ts     # financial metrics + evidence
+│       │   ├── extractionUtils.ts
+│       │   ├── riskAgent.ts           # red flags + severity
+│       │   ├── embeddingAgent.ts      # optional semantic vectors
+│       │   ├── benchmarkAgent.ts      # company comparisons
+│       │   ├── researchAgent.ts       # 3-mode Q&A with citations
+│       │   ├── reportAgent.ts         # structured reports
+│       │   ├── analysisUtils.ts       # retrieval + grounding checks
+│       │   ├── aiStatus.ts            # provider status + fallbacks
+│       │   └── llmClient.ts           # Groq (OpenAI-compatible) client
 │       │
 │       ├── auth.ts
 │       ├── seed.ts
@@ -416,7 +457,7 @@ FinResearch AI uses PostgreSQL with Drizzle ORM.
 | `/`                    | Application entry point   |
 | `/login`               | Login                     |
 | `/register`            | Registration              |
-| `/dashboard`           | Main dashboard            |
+| `/dashboard`           | Main dashboard (pipeline + Agent Activity) |
 | `/dashboard/sessions`  | Research sessions         |
 | `/dashboard/documents` | Document management       |
 | `/dashboard/companies` | Companies                 |
@@ -429,22 +470,27 @@ FinResearch AI uses PostgreSQL with Drizzle ORM.
 
 ### API
 
-| Endpoint                  | Purpose                        |
-| ------------------------- | ------------------------------ |
-| `/api/auth/register`      | Register users                 |
-| `/api/auth/[...nextauth]` | Authentication                 |
-| `/api/health`             | Health check                   |
-| `/api/seed`               | Seed demo data                 |
-| `/api/sessions`           | Research sessions              |
-| `/api/documents`          | Document upload and management |
-| `/api/worker/documents`   | Authenticated durable-job recovery worker |
-| `/api/companies`          | Company data                   |
-| `/api/metrics`            | Financial metrics              |
-| `/api/risks`              | Risk information               |
-| `/api/benchmark`          | Company comparison             |
-| `/api/reports`            | Report generation              |
-| `/api/chat`               | Research Agent                 |
-| `/api/dashboard`          | Dashboard statistics           |
+| Endpoint                        | Purpose                                        |
+| ------------------------------- | ---------------------------------------------- |
+| `/api/auth/register`            | Register users                                 |
+| `/api/auth/[...nextauth]`       | Authentication                                 |
+| `/api/health`                   | Health check                                   |
+| `/api/seed`                     | Demo data seeding                              |
+| `/api/sessions`                 | Research sessions                              |
+| `/api/sessions/[id]`            | Single session management                      |
+| `/api/documents`                | Document upload (Validation Agent runs here) and management |
+| `/api/documents/[id]`           | Single document detail, metadata, delete       |
+| `/api/documents/[id]/embeddings`| Build or rebuild semantic vectors for a document |
+| `/api/documents/[id]/reprocess` | Re-run the agent pipeline for a document       |
+| `/api/worker/documents`         | Authenticated durable-job recovery worker      |
+| `/api/companies`                | Company data                                   |
+| `/api/metrics`                  | Financial metrics                              |
+| `/api/risks`                    | Risk information                               |
+| `/api/benchmark`                | Company comparison                             |
+| `/api/reports`                  | Report generation                              |
+| `/api/reports/[id]`             | Single report retrieval                        |
+| `/api/chat`                     | Research Agent                                 |
+| `/api/dashboard`                | Dashboard statistics and Agent Activity        |
 
 ---
 
@@ -476,11 +522,9 @@ Use Node.js 20.9 or newer for Next.js 16.
 ## 1. Clone the Repository
 
 ```bash
-git clone --branch arena/a267d0d5-multi-agent-financial-research https://github.com/Gauravcodesbyheart/multi-agent-financial-research-research-system.git
+git clone https://github.com/Gauravcodesbyheart/multi-agent-financial-research-research-system.git
 cd multi-agent-financial-research-research-system
 ```
-
-If the changes have already been merged to the repository's default branch, omit `--branch arena/a267d0d5-multi-agent-financial-research`.
 
 ## 2. Install Dependencies
 
@@ -643,7 +687,9 @@ state as JSON.
 | --- | --- | --- |
 | Every request fails, login rejects valid passwords | `DATABASE_URL` is unset or the database is unreachable; `pg` silently falls back to `localhost:5432` | Set `DATABASE_URL` in `.env`; the app now refuses to start with a clear error instead of failing per-request |
 | Login always says invalid credentials | Database is reachable but the schema was never created | `npm run db:push` (development) or `npm run db:migrate` |
+| Upload rejected: "This file does not look like a financial document" | The Validation Agent determined the file is not a financial document | Upload an annual report, financial statement, or regulatory filing (PDF/DOCX/TXT). The message names what the file looked like (e.g. Resume/CV) so you can confirm the right file was chosen |
 | Research Agent returns passages but never a written answer | `GROQ_API_KEY` is missing or invalid | Add a key; the response now states this explicitly instead of just returning excerpts |
+| Research answers end with `GENERAL INFORMATION ...` | The question is outside the uploaded documents (general-knowledge mode) | Expected behaviour — the badge marks unverified general knowledge; ask about the uploaded filings for cited answers |
 | `/api/health` shows `"state": "degraded"` | The configured model was rejected (renamed, decommissioned, or not enabled for your key) | The client automatically retries fallback models and reports the substitution in `ai.lastNotice`; pin another model with `GROQ_MODEL` |
 | A document is uploaded and indexed but no question ever cites it | Document was uploaded under **Workspace (all sessions)** while a different session was in use | The Research Agent searches the active session plus all session-less workspace documents; link the document to a session to scope it |
 | Metrics/risks are empty after upload | Processing job did not finish | Check the Documents page status, then `GET /api/worker/documents` with `Authorization: Bearer $CRON_SECRET` to drain queued jobs |
@@ -661,31 +707,32 @@ In production, `GET /api/seed` is disabled; the `POST` route requires `SEED_SECR
 
 ## Making Changes on Your Local Machine
 
-1. Clone the repository and branch shown above (or fetch it in an existing clone):
+1. Clone the repository (or fetch it in an existing clone):
 
    ```bash
    git fetch origin
-   git checkout arena/a267d0d5-multi-agent-financial-research
-   git pull --ff-only origin arena/a267d0d5-multi-agent-financial-research
+   git checkout main
+   git pull --ff-only origin main
    ```
 
 2. Install dependencies with `npm ci`, create `.env` from `.env.example`, point `DATABASE_URL` to your local PostgreSQL database, and apply migrations.
 3. Start development mode with `npm run dev`. The dashboard refreshes automatically as you edit files.
 4. Common code locations:
-   * `src/lib/agents/` — extraction, red-flag, embedding, retrieval, benchmarking, and report logic
+   * `src/lib/agents/` — validation, extraction, red-flag, embedding, retrieval, benchmarking, and report logic
    * `src/app/dashboard/` — user-facing pages
    * `src/app/api/` — authenticated route handlers
    * `src/db/schema.ts` and `drizzle/` — schema and versioned migrations
 5. Before sharing a change, run `npm test`, `npm run typecheck`, `npm run lint`, and `npm run build`. For database changes, generate and review a new SQL migration and test it on a disposable database first.
-6. Commit and push your work to a Git branch. In an existing clone:
+6. Commit and push your work:
 
    ```bash
    git add .
    git commit -m "Describe the change"
-   git push origin arena/a267d0d5-multi-agent-financial-research
+   git pull origin main --no-edit
+   git push origin main
    ```
 
-   If you use a different branch in your own fork, replace the branch name in the commands. Never commit `.env` or confidential financial files.
+   Never commit `.env` or confidential financial files.
 
 # 🧪 Validate Before Deployment
 
@@ -722,13 +769,15 @@ DOCX
 TXT
 ```
 
-Provide the relevant company and document information.
+Provide the relevant company and document information. The **Validation Agent** checks the file first — non-financial files are rejected with a message naming the detected type.
 
 ### 4. Wait for Processing
 
 The system runs each stage in order:
 
 ```text
+Validate the file is a financial document
+      ↓
 Extract text
       ↓
 Clean and chunk source passages
@@ -771,40 +820,35 @@ Generate structured research reports containing key findings, comparisons, risks
 
 ### 9. Ask the Research Agent
 
-Ask questions in natural language and review the supporting evidence and citations.
+Ask questions in natural language and review the supporting evidence and citations. Greetings get a quick capability intro, document questions get cited answers, and out-of-scope questions get clearly labelled general information.
 
 ---
 
 # ☁️ Deployment
 
-## Recommended Architecture
+## Live Architecture
 
 ```text
-GitHub
+GitHub (push to main)
    │
    ▼
-Vercel
+Render Web Service   (Build: npm ci && npm run build / Start: npm start)
    │
-   ├── Next.js Application
+   ├── Next.js application
    │
-   └──────────────┐
-                  │
-                  ▼
-             Neon PostgreSQL
-                  │
-                  │
-                  ▼
-             Google Groq
+   ├──► Neon PostgreSQL
+   │
+   └──► Groq LLM API (optional) + embeddings provider (optional)
 ```
 
-**Vercel + Neon PostgreSQL** is the recommended deployment route for this Next.js application.
+The live application runs on **Render** as a Web Service connected to a managed PostgreSQL database.
 
-### Vercel + Neon (recommended)
+### Render (live deployment)
 
-1. Push your branch to GitHub and import the repository into Vercel. A non-production branch normally creates a Preview deployment; merge into the configured production branch when ready to release.
-2. Create a PostgreSQL database in Neon (or another PostgreSQL provider). Keep the connection URL private and ensure its SSL parameters match the provider's instructions.
-3. In Vercel **Project → Settings → Environment Variables**, configure the values below for Preview and Production separately.
-4. Back up any existing database. For a new empty database, run the checked-in migrations once from a trusted machine/CI job using the production URL:
+1. Push to `main` on GitHub — Render auto-deploys from the connected repository.
+2. Render **Build Command**: `npm ci && npm run build`; **Start Command**: `npm start`.
+3. Configure the environment variables below in the Render dashboard (never commit the values).
+4. Back up any existing database. For a new empty database, run the checked-in migrations once from a trusted machine using the production URL:
 
    ```bash
    DATABASE_URL='postgresql://...production connection...' npx drizzle-kit migrate
@@ -817,10 +861,18 @@ Vercel
    npx drizzle-kit migrate
    ```
 
-   The checked-in `0000` migration initializes a new database. If your existing production database was previously initialized with `drizzle-kit push`, do not blindly replay it; review and apply the pending schema change safely, then reconcile the migration history.
-5. Set a strong `CRON_SECRET`. `vercel.json` schedules `/api/worker/documents` every minute; Vercel sends the matching bearer token to the worker. Confirm Cron is enabled for the project/plan.
-6. Deploy, then verify `/api/health`, registration/login, document upload, processing status, citations, report generation, and that a test queued job is drained. Upload a harmless test document before using private filings.
+5. Set a strong `CRON_SECRET`. Schedule an external pinger (e.g. UptimeRobot or cron-job.org) to `GET /api/worker/documents` with `Authorization: Bearer $CRON_SECRET` every few minutes so queued/stale jobs are drained; simple uptime pings to `/api/health` also keep the service warm.
+6. Deploy, then verify `/api/health`, registration/login, document upload (including a wrong-type rejection from the Validation Agent), processing status, citations, report generation, and that a test queued job is drained. Upload a harmless test document before using private filings.
 7. The upload response uses Next.js `after()` for low latency, while the durable PostgreSQL job row plus scheduled worker recovers interrupted attempts. Function/cron duration limits still apply; move sustained or oversized work to a dedicated worker and use private object storage.
+
+### Alternative: Vercel + Neon
+
+1. Push your branch to GitHub and import the repository into Vercel. A non-production branch normally creates a Preview deployment; merge into the configured production branch when ready to release.
+2. Create a PostgreSQL database in Neon (or another PostgreSQL provider). Keep the connection URL private and ensure its SSL parameters match the provider's instructions.
+3. In Vercel **Project → Settings → Environment Variables**, configure the values below for Preview and Production separately.
+4. Apply migrations as shown above before deploying.
+5. Set a strong `CRON_SECRET`. `vercel.json` schedules `/api/worker/documents` every minute; Vercel sends the matching bearer token to the worker. Confirm Cron is enabled for the project/plan.
+6. Verify the same post-deploy checks listed for Render.
 
 ### Production Environment Variables
 
@@ -830,7 +882,7 @@ Configure these in the hosting provider (never commit the values):
 DATABASE_URL                   # Neon POOLED endpoint (-pooler host, ?sslmode=require)
 DIRECT_URL                     # Neon DIRECT endpoint; migrations only
 NEXTAUTH_SECRET
-NEXTAUTH_URL
+NEXTAUTH_URL                   # exact public HTTPS origin
 GROQ_API_KEY                   # optional; leave unset for evidence-only local fallbacks
 GROQ_MODEL                     # e.g. openai/gpt-oss-120b
 GROQ_MODEL_PRO                 # optional; larger model for reports
@@ -846,13 +898,13 @@ Use a **different production `NEXTAUTH_SECRET`** from your local development sec
 
 ### Other Node.js hosts
 
-Render, Railway, Fly.io, or a VPS can also run this app. Use a managed PostgreSQL database, set the same environment variables, run `npm ci` and `npm run build` during the build step, and `npm start` as the web start command. Apply migrations as a separate pre-deploy job. Configure a scheduler to GET `/api/worker/documents` with `Authorization: Bearer $CRON_SECRET` at a suitable interval. For workloads that can exceed request limits, move execution to a dedicated worker and store large source files in private object storage.
+Railway, Fly.io, or a VPS can also run this app. Use a managed PostgreSQL database, set the same environment variables, run `npm ci` and `npm run build` during the build step, and `npm start` as the web start command. Apply migrations as a separate pre-deploy job. Configure a scheduler to GET `/api/worker/documents` with `Authorization: Bearer $CRON_SECRET` at a suitable interval. For workloads that can exceed request limits, move execution to a dedicated worker and store large source files in private object storage.
 
 ---
 
 # 🔐 Security
 
-Security is especially important because the application processes financial documents and uses authentication and external AI services. Extracted source text is currently stored in PostgreSQL. When Groq is configured, document excerpts/chunks and research prompts are sent to Google's Groq API for model analysis or embeddings; confirm your data-handling and contractual requirements before uploading confidential material. Use a private database, HTTPS, and least-privilege credentials.
+Security is especially important because the application processes financial documents and uses authentication and external AI services. Extracted source text is currently stored in PostgreSQL. When Groq is configured, document excerpts/chunks and research prompts are sent to the Groq API for model analysis or embeddings; confirm your data-handling and contractual requirements before uploading confidential material. Use a private database, HTTPS, and least-privilege credentials.
 
 ### Never commit:
 
@@ -1057,16 +1109,17 @@ Potential next improvements include:
 │                    FINRESEARCH AI                        │
 ├──────────────────────────────────────────────────────────┤
 │                                                          │
+│  🛡️ Upload Validation (rejects non-financial files)       │
 │  📄 Financial Document Processing                        │
-│  🤖 Multi-Agent AI Analysis                              │
+│  🤖 Multi-Agent AI Analysis (8 agents)                   │
 │  📊 Financial Metric Extraction                          │
 │  ⚠️ Risk Detection                                       │
 │  🏢 Company Benchmarking                                 │
 │  💬 Evidence-Based Research Chat                         │
 │  📑 AI-Assisted Report Generation                        │
-│  🔐 Authentication & Protected APIs                     │
-│  🗄️ PostgreSQL + Drizzle ORM                            │
-│  ☁️ Vercel + Neon Deployment                            │
+│  🔐 Authentication & Protected APIs                      │
+│  🗄️ PostgreSQL + Drizzle ORM                             │
+│  ☁️ Render Deployment (live)                             │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -1079,6 +1132,8 @@ The goal of FinResearch AI is to reduce the manual effort involved in financial 
 
 ```text
 Financial Documents
+        ↓
+Upload Validation
         ↓
 Document Processing
         ↓
@@ -1115,9 +1170,10 @@ React
 PostgreSQL
 Drizzle ORM
 NextAuth
-Google Groq
+Groq
 Node.js
 TypeScript
+Render
 ```
 
 ---
